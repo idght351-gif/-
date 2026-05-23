@@ -42,6 +42,7 @@ async function startServer() {
         guidelines = "",
         images = [], // Array of base64 data URLs
         visitImages = [], // Array of { id, name, dataUrl } for actual visit photos
+        guidelineImages = [], // Array of base64 data URLs for guideline caps
       } = req.body;
 
       let ai;
@@ -96,6 +97,27 @@ async function startServer() {
         };
       });
 
+      // Convert guideline images/PDFs/files to Gemini inline data
+      const guidelineParts = guidelineImages.map((imgStr: string) => {
+        let mimeType = "image/png";
+        let base64Data = imgStr;
+
+        if (imgStr.startsWith("data:")) {
+          const match = imgStr.match(/^data:([^;]+);base64,(.+)$/);
+          if (match) {
+            mimeType = match[1];
+            base64Data = match[2];
+          }
+        }
+
+        return {
+          inlineData: {
+            mimeType,
+            data: base64Data,
+          },
+        };
+      });
+
       // Assemble tone description
       let toneGuide = "";
       if (tone === "friendly") {
@@ -133,8 +155,8 @@ ${guidelines || "특별한 가이드 기준 없음 (자연스러운 칭찬과 �
 ${visitMetaInfo || "등록된 본문 실물 사진 없음 (자연스러운 일러스트 가이드 적용)"}
 
 # Core Vision & Text Keyword Learning Instruction:
-- **⭐ 핵심 지시 (가이드라인 글 및 이미지 내 키워드 오토 추출):** 3번에 업로드된 [리뷰작성 가이드라인 텍스트 파일]이나 [우수리뷰 캡쳐 스크린샷 이미지] 속에 포함된 텍스트와 노출 권장 키워드(예: "OO맛집, OO추천, OO역맛집" 등 강조 문구 및 글귀)를 비전 및 다층분석 기술로 **전부 정밀 추출하여 스스로 학습**하세요. 학습된 핵심 키워드 리스트를 제목과 본문 요소곳곳에 **5~8회씩 완벽히 자연스럽게** 녹여내야 합니다.
-- 함께 송신된 **우수 리뷰 스크린샷 캡쳐본**들을 통해, 글 단락 나누기 호흡법, 유용한 강조 볼드 처리 기법을 분석 학습하여 이식하세요.
+- **⭐ 핵심 지시 (가이드라인 글 및 이미지 내 키워드 오토 추출):** 3번에 업로드된 [리뷰작성 가이드라인 텍스트 파일], [가이드라인 캡처 이미지], [우수리뷰 파일/PDF/캡쳐 스크린샷 이미지] 속에 포함된 텍스트와 노출 권장 키워드(예: "OO맛집, OO추천, OO역맛집" 등 강조 문구 및 글귀)를 비전 및 다층분석 기술로 **전부 정밀 추출하여 스스로 학습**하세요. 학습된 핵심 키워드 리스트를 제목과 본문 요소곳곳에 **5~8회씩 완벽히 자연스럽게** 녹여내야 합니다.
+- 함께 송신된 **우수 리뷰 스크린샷 및 참고용 파일/PDF**들을 통해, 글 단락 나누기 호흡법, 유용한 강조 볼드 처리 기법을 분석 학습하여 이식하세요.
 - **실제 업로드된 실물 사진들(사진 순서 1, 2, 3...)**이 있을 경우, Gemini 비전 기술로 각 이미지의 디자인, 색상, 음식 비주얼, 내부 매장 상태 등을 현실성 있게 파악하여 본문에 극찬 스토리로 세부 묘사하세요. 
 - 예: "고기가 노릇하게 구워진 1번 사진을 보시면 대박이죠", "2번 사진처럼 매장 분위기가 아주 모던해서..." 등, 실제 사진 내용을 소름 돋게 설명에 녹여주어 단순 줄글이 아닌 '진짜 영수증 리뷰어' 같은 포스를 풍기게 하세요.
 
@@ -187,17 +209,22 @@ ${visitMetaInfo || "등록된 본문 실물 사진 없음 (자연스러운 일�
       // Pack system contents and screenshot images if available
       const parts: any[] = [];
       
-      // 1. Add style screenshots
+      // 1. Add style screenshots / PDFs / reference files
       screenshotParts.forEach((part: any) => {
         parts.push(part);
       });
 
-      // 2. Add ordered real visit images
+      // 2. Add guideline captures / files
+      guidelineParts.forEach((part: any) => {
+        parts.push(part);
+      });
+
+      // 3. Add ordered real visit images
       visitParts.forEach((part: any) => {
         parts.push(part);
       });
 
-      // 3. Add text prompt
+      // 4. Add text prompt
       parts.push({ text: promptText });
 
       const response = await ai.models.generateContent({

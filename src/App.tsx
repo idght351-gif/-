@@ -45,7 +45,8 @@ export default function App() {
   const handleGenerateReview = async (
     params: ReviewGenerationParams,
     screenshotDataUrls: string[],
-    visitImages: { id: string; name: string; dataUrl: string }[]
+    visitImages: { id: string; name: string; dataUrl: string }[],
+    guidelineImages?: string[]
   ) => {
     setIsLoading(true);
     setErrorStatus(null);
@@ -65,6 +66,7 @@ export default function App() {
           guidelines: params.guidelines,
           images: screenshotDataUrls,
           visitImages: visitImages,
+          guidelineImages: guidelineImages || [],
         }),
       });
 

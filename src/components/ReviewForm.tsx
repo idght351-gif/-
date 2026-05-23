@@ -12,7 +12,8 @@ interface ReviewFormProps {
   onGenerate: (
     params: ReviewGenerationParams,
     screenshotDataUrls: string[],
-    visitImages: { id: string; name: string; dataUrl: string }[]
+    visitImages: { id: string; name: string; dataUrl: string }[],
+    guidelineImages?: string[]
   ) => void;
   isLoading: boolean;
 }
@@ -32,6 +33,9 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
   // Screenshots (2~3 files to learn best quality blog formats)
   const [screenshots, setScreenshots] = useState<UploadedFile[]>([]);
   
+  // Guideline uploads for step 3 (can accept screenshots/images as well as doc files)
+  const [guidelineImages, setGuidelineImages] = useState<UploadedFile[]>([]);
+  
   // New: Actual Visit Photos (ordered 1, 2, 3... to be placed sequentially inside the review)
   const [visitImages, setVisitImages] = useState<UploadedFile[]>([]);
 
@@ -44,14 +48,22 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
   const [isDragOverVisit, setIsDragOverVisit] = useState(false);
   const [isDragOverDoc, setIsDragOverDoc] = useState(false);
 
-  // Handle image uploads (style screenshots)
+  // Handle reference uploads (style screenshots, PDFs, documents)
   const processImageFiles = (files: FileList) => {
     const currentCount = screenshots.length;
     const remainingSlots = 3 - currentCount;
     if (remainingSlots <= 0) return;
 
     const filesToProcess = Array.from(files)
-      .filter((file) => file.type.startsWith("image/"))
+      .filter((file) => 
+        file.type.startsWith("image/") || 
+        file.type === "application/pdf" || 
+        file.name.endsWith(".pdf") || 
+        file.name.endsWith(".txt") || 
+        file.name.endsWith(".docx") || 
+        file.name.endsWith(".doc") ||
+        file.name.endsWith(".hwp")
+      )
       .slice(0, remainingSlots);
 
     filesToProcess.forEach((file) => {
@@ -62,7 +74,7 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
             id: crypto.randomUUID(),
             name: file.name,
             size: file.size,
-            type: file.type,
+            type: file.type || (file.name.endsWith(".pdf") ? "application/pdf" : "text/plain"),
             dataUrl: reader.result,
           };
           setScreenshots((prev) => [...prev, newUploaded].slice(0, 3));
@@ -130,6 +142,10 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
     setVisitImages((prev) => prev.filter((item) => item.id !== id));
   };
 
+  const removeGuidelineImage = (id: string) => {
+    setGuidelineImages((prev) => prev.filter((item) => item.id !== id));
+  };
+
   // Reorder index mapping
   const moveVisitImage = (index: number, direction: "up" | "down") => {
     if (direction === "up" && index === 0) return;
@@ -143,11 +159,29 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
     setVisitImages(updated);
   };
 
-  // Handle guidelines document upload (supports txt, docx, pdf etc. We read content if it's plain text)
+  // Handle guidelines document/screenshot upload (supports txt, docx, pdf, png, jpg etc.)
   const processDocFile = (file: File) => {
+    // If it is an image or PDF, read it as Data URL as well and add to guidelineImages state for Gemini to read natively!
+    if (file.type.startsWith("image/") || file.type === "application/pdf" || file.name.endsWith(".pdf")) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        if (typeof reader.result === "string") {
+          const newUploaded: UploadedFile = {
+            id: crypto.randomUUID(),
+            name: file.name,
+            size: file.size,
+            type: file.type || "application/pdf",
+            dataUrl: reader.result,
+          };
+          setGuidelineImages((prev) => [...prev, newUploaded]);
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+
     setGuidelinesFileName(file.name);
     
-    // If it's a text file, let's read and auto-populate the guidelines text area!
+    // Auto-populate description in the textbox
     if (file.type === "text/plain" || file.name.endsWith(".txt")) {
       const reader = new FileReader();
       reader.onload = (e) => {
@@ -156,8 +190,17 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
         }
       };
       reader.readAsText(file);
+    } else if (file.type.startsWith("image/")) {
+      setGuidelinesText((prev) => {
+        const banner = `[${file.name} 가이드라인 이미지가 시각 분석용으로 업로드되었습니다.]`;
+        return prev ? `${prev}\n${banner}` : banner;
+      });
+    } else if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
+      setGuidelinesText((prev) => {
+        const banner = `[${file.name} 가이드라인 PDF 문서가 다층 분석용으로 업로드되었습니다.]`;
+        return prev ? `${prev}\n${banner}` : banner;
+      });
     } else {
-      // For other formats (docx, pdf, hwp), represent it nicely and prompt for manual entry or state that key rules will be synthesized
       setGuidelinesText(
         `[${file.name} 가이드라인 파일이 분석용으로 등록되었습니다.]\n본문에 들어갈 필수 문구, 금지어, 필수 첨부 키워드 등을 직접 추가로 편집해 주시면 리뷰 반영 완성도가 더욱 매끄러워집니다.`
       );
@@ -220,7 +263,8 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
       name: s.name,
       dataUrl: s.dataUrl,
     }));
-    onGenerate(payload, imgDataUrls, visitImgList);
+    const guidelineImgDataUrls = guidelineImages.map((g) => g.dataUrl);
+    onGenerate(payload, imgDataUrls, visitImgList, guidelineImgDataUrls);
   };
 
   return (
@@ -286,7 +330,7 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
                 02
               </span>
               <label className="text-xs font-bold tracking-wide text-neutral-800 uppercase block">
-                우수리뷰 캡쳐 이미지 (2~3개)
+                우수리뷰 캡처 이미지 및 분석 파일 (2~3개)
               </label>
             </div>
             <span className="text-[10px] bg-brand-bg px-2 py-0.5 rounded-full text-brand-blue font-bold font-mono">
@@ -314,16 +358,16 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
                 type="file"
                 ref={imageInputRef}
                 onChange={handleImageChange}
-                accept="image/*"
+                accept="image/*,application/pdf,text/plain,.doc,.docx,.hwp"
                 multiple
                 className="hidden"
                 disabled={isLoading}
               />
               <p className="text-xs font-bold text-neutral-800">
-                우수리뷰 캡쳐본을 여기에 드롭 & 클릭
+                우수리뷰 캡쳐본, PDF, 문서 파일을 여기에 드롭 & 클릭
               </p>
               <p className="text-[10px] text-neutral-500 mt-1 leading-normal">
-                기존 상위 노출중인 블로그 포스팅의 캡쳐 이미지<br />(어투, 강조, 단락 나누기 스타일 학습용)
+                기존 상위 노출중인 블로그 포스팅의 캡쳐 이미지 또는 PDF / 원고 문서 파일<br />(글 어투, 강조 기법, 단락 스타일을 자동 정밀 분석 학습)
               </p>
             </div>
           )}
@@ -340,15 +384,27 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
                     exit={{ opacity: 0, scale: 0.9 }}
                     className="relative aspect-square border border-brand-border rounded-lg bg-neutral-50 overflow-hidden shadow-[0_4px_12px_rgba(0,0,0,0.03)] group"
                   >
-                    <img
-                      src={file.dataUrl}
-                      alt="Uploaded Review Thumbnail"
-                      className="w-full h-full object-cover transition-all duration-300"
-                    />
+                    {file.type.startsWith("image/") ? (
+                      <img
+                        src={file.dataUrl}
+                        alt="Uploaded Review Thumbnail"
+                        className="w-full h-full object-cover transition-all duration-300"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center p-2.5 bg-blue-50/20 text-center">
+                        <span className="text-2xl mb-1">📄</span>
+                        <span className="text-[9px] font-bold text-neutral-700 max-w-full truncate px-1" title={file.name}>
+                          {file.name}
+                        </span>
+                        <span className="text-[8px] text-brand-blue font-semibold mt-0.5 uppercase font-mono">
+                          {file.name.split('.').pop() || "FILE"}
+                        </span>
+                      </div>
+                    )}
                     <button
                       type="button"
                       onClick={() => removeScreenshot(file.id)}
-                      className="absolute top-1.5 right-1.5 bg-neutral-900/80 hover:bg-neutral-900 text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center transition-colors font-bold shadow-md"
+                      className="absolute top-1.5 right-1.5 bg-neutral-900/80 hover:bg-neutral-900 text-white text-[10px] rounded-full w-5 h-5 flex items-center justify-center transition-colors font-bold shadow-md z-10"
                     >
                       ×
                     </button>
@@ -510,7 +566,7 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
               type="file"
               ref={docInputRef}
               onChange={handleDocChange}
-              accept=".txt,.doc,.docx,.pdf,.hwp"
+              accept=".txt,.doc,.docx,.pdf,.hwp,image/*"
               className="hidden"
               disabled={isLoading}
             />
@@ -522,14 +578,56 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
             ) : (
               <div>
                 <p className="text-xs font-bold text-neutral-800">
-                  리뷰 가이드라인 분석 파일 업로드 (.txt, .docx 등)
+                  리뷰 가이드라인 분석 파일 및 캡처 이미지 업로드
                 </p>
                 <p className="text-[10px] text-neutral-500 mt-1 leading-normal">
-                  체험단 서식에 필수적으로 넣어야 할 지정사항 파일
+                  체험단 필수 안내 사항문서 (.txt, .docx, .pdf) 또는 가이드 캡처 스크린샷 이미지
                 </p>
               </div>
             )}
           </div>
+
+          {/* Guideline Screenshots / PDF Previews */}
+          {guidelineImages.length > 0 && (
+            <div className="grid grid-cols-4 gap-2 mt-2">
+              <AnimatePresence>
+                {guidelineImages.map((file) => (
+                  <motion.div
+                    key={file.id}
+                    initial={{ opacity: 0, scale: 0.9 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.9 }}
+                    className="relative aspect-square border border-brand-border rounded-lg bg-neutral-50 overflow-hidden shadow-sm group"
+                  >
+                    {file.type.startsWith("image/") ? (
+                      <img
+                        src={file.dataUrl}
+                        alt="Uploaded Guideline"
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex flex-col items-center justify-center p-1.5 bg-blue-50/10 text-center">
+                        <span className="text-lg">📄</span>
+                        <span className="text-[8px] font-bold text-neutral-700 max-w-full truncate px-0.5" title={file.name}>
+                          {file.name}
+                        </span>
+                        <span className="text-[7.5px] text-brand-blue font-bold uppercase mt-0.5 font-mono">
+                          {file.name.split('.').pop() || "FILE"}
+                        </span>
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => removeGuidelineImage(file.id)}
+                      className="absolute top-1 right-1 bg-neutral-900/80 hover:bg-neutral-900 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center transition-colors font-bold shadow-sm z-10"
+                    >
+                      ×
+                    </button>
+                  </motion.div>
+                ))}
+              </AnimatePresence>
+            </div>
+          )}
 
           {/* Guidelines Text Editor Pre-populate / Edit Area */}
           <div className="space-y-1">
