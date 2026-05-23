@@ -858,42 +858,7 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
           )}
         </div>
 
-        {/* Step 5: Post Tone selection */}
-        <div className="space-y-3 pt-1 border-t border-brand-border">
-          <div className="flex items-center gap-1.5">
-            <span className="px-2 py-0.5 text-[9px] bg-brand-blue text-white font-bold rounded-md font-mono">
-              05
-            </span>
-            <label className="text-xs font-bold tracking-wide text-neutral-800 uppercase block">
-              블로그 톤앤매너 스타일
-            </label>
-          </div>
-          <div className="grid grid-cols-2 gap-2">
-            {[
-              { id: "friendly", label: "친근 발랄 (일상형)", desc: "상냥한 인사 & 이모지 혼용" },
-              { id: "detailed", label: "초정밀 정보형", desc: "이용 팁 수록 성실 분석" },
-              { id: "emotional", label: "감성 브이로그", desc: "분위기 감성 정갈 서사" },
-              { id: "analytical", label: "논리적 정보형", desc: "객관성 기반 철저한 비교" },
-            ].map((item) => (
-              <button
-                key={item.id}
-                type="button"
-                onClick={() => setTone(item.id as ReviewTone)}
-                disabled={isLoading}
-                className={`text-left p-3 border rounded-xl transition-all ${
-                  tone === item.id
-                    ? "border-brand-blue bg-blue-50/20 text-brand-blue shadow-[0_4px_12px_rgba(0,82,255,0.04)]"
-                    : "border-neutral-200 hover:border-brand-blue hover:bg-neutral-50/55 bg-white"
-                }`}
-              >
-                <div className={`text-xs font-bold ${tone === item.id ? "text-brand-blue" : "text-neutral-800"}`}>
-                  {item.label}
-                </div>
-                <div className="text-[9px] text-neutral-400 mt-1 leading-none">{item.desc}</div>
-              </button>
-            ))}
-          </div>
-        </div>
+
 
         {/* Big high contrast launch button */}
         <div className="pt-4">

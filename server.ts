@@ -131,18 +131,8 @@ async function startServer() {
         });
 
       // Assemble tone description
-      let toneGuide = "";
-      if (tone === "friendly") {
-        toneGuide = "친근하고 상냥한 말투, 이모티콘을 적재적소에 사용하는 여성스럽고 활기찬 글솜씨 (~해요, ~했답니다, 어조)";
-      } else if (tone === "analytical") {
-        toneGuide = "꼼꼼하고 분석적인 인플루언서 말투, 장단점을 명확히 비교하고 성분, 가격, 가성비, 위치를 수치화하여 객적으로 기술 (~입니다, ~합니다, 단답형 어투 등)";
-      } else if (tone === "detailed") {
-        toneGuide = "정보 위주의 대량 방출용 초정밀 리뷰 말투, 첫 방문자를 위해 아주 꼼꼼하게 주차, 대기 시간, 이용 방법까지 한 줄씩 다 떠먹여 주는 성실한 리뷰 스타일";
-      } else if (tone === "emotional") {
-        toneGuide = "감성적이고 분위기 중심의 카페/맛집 브이로그 형식 스토리텔링 말투, 일상 일기처럼 사색을 즐기며 촉각, 미각, 장소 분위기를 고급스럽고 차분하게 표현 (~했다, 고요하게 흘러가던 시간, 느낌 형용사 기용)";
-      } else {
-        toneGuide = "표준적인 가독성 높은 네이버 인플루언서 블로그 어투 (자연스러움과 정보성 조화)";
-      }
+      // Users requested to delete step 5 and use the default natural blog influencer tone referencing excellent reviews
+      const toneGuide = "인위적이지 않고 대단히 세련되면서도 친근한 네이버 인플루언서 톤앤매너. 함께 업로드된 [우수 리뷰 캡쳐 이미지 및 원고 파일/PDF]의 실제 문체, 단락 유입 방식, 구어체/해요체 어구 믹싱, 이모지 기법, 강조 패턴을 집중 스캔하여 100% 동일하게 사람 냄새 나는 리얼한 우수 포스팅 어투를 고도로 복사/재현해야 합니다.";
 
       // Prepare descriptive listing of upload sequence to aid the instruction
       const visitMetaInfo = visitImages.map((img: any, idx: number) => {
