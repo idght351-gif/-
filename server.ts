@@ -1,7 +1,7 @@
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 
 // Lazy-loaded Gemini client helper
 let aiClient: GoogleGenAI | null = null;
@@ -326,15 +326,15 @@ ${visitMetaInfo || "등록된 본문 실물 사진 없음 (자연스러운 일�
           temperature: 0.1, // Low temp for accurate text extraction
           responseMimeType: "application/json",
           responseSchema: {
-            type: "OBJECT",
+            type: Type.OBJECT,
             properties: {
               reportText: {
-                type: "STRING",
+                type: Type.STRING,
                 description: "가이드라인 내용들을 대제목/소제목 및 목록 기호로 한글화하여 잘 정돈한 마크다운 양식 요약 텍스트"
               },
               extractedKeywords: {
-                type: "ARRAY",
-                items: { type: "STRING" },
+                type: Type.ARRAY,
+                items: { type: Type.STRING },
                 description: "가이드 이미지/문서 내에서 반드시 제목이나 본문에 들어가야 할 대표 노출 조건 검색 키워드 단어들 (예: '홍대맛집', '라멘추천'). '#' 기호나 공백, 따옴표 없이 순수한 완성형 단어로 추출해야 합니다."
               }
             },

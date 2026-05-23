@@ -16,9 +16,10 @@ interface ReviewFormProps {
     guidelineImages?: string[]
   ) => void;
   isLoading: boolean;
+  onLoadDemo?: () => void;
 }
 
-export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
+export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProps) {
   // Store info
   const [storeName, setStoreName] = useState("");
   const [storeCategory, setStoreCategory] = useState("");
@@ -385,6 +386,28 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
           우수리뷰 이미지의 서식과 본문을 학습하여<br />독창적이고 완성도 높은 포스팅 원고를 생성합니다
         </p>
       </div>
+
+      {/* 🎁 Demo Presentation Callout */}
+      {onLoadDemo && (
+        <div className="bg-gradient-to-r from-blue-50/60 to-indigo-50/60 border border-blue-100 rounded-2xl p-4 flex flex-col space-y-2.5 shadow-sm animate-fade-in">
+          <div className="flex items-center gap-2">
+            <span className="text-sm">🎁</span>
+            <span className="text-xs font-bold text-neutral-800">
+              최종결과 원고를 바로 체험해보고 싶으신가요?
+            </span>
+          </div>
+          <p className="text-[10px] text-neutral-500 leading-relaxed font-sans">
+            사진이나 가이드라인을 직접 준비하지 않아도, 원클릭으로 완벽하게 조율된 최고급 네이버 SEO 블로그 포스팅 최종형과 실시간 요약 통계, 연동 수정을 체험하실 수 있습니다.
+          </p>
+          <button
+            type="button"
+            onClick={onLoadDemo}
+            className="w-full py-2.5 bg-brand-blue hover:bg-blue-700 text-white font-bold text-xs rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-1.5"
+          >
+            🚀 임의 데이터로 결과물 샘플 즉시 보기
+          </button>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-5">
         

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Markdown from "react-markdown";
 
 interface ReviewOutputProps {
@@ -17,10 +17,14 @@ export function ReviewOutput({ generatedText, onReset, storeName }: ReviewOutput
   const [copiedTitle, setCopiedTitle] = useState(false);
   const [copiedBody, setCopiedBody] = useState(false);
 
-  // Helper to split title from body for individual copying
+  const [editedTitle, setEditedTitle] = useState("");
+  const [editedBody, setEditedBody] = useState("");
+  const [isEditing, setIsEditing] = useState(false);
+
+  // Helper to split title from body for individual copying and editing
   // Usually, title is at the top like "# [제목] ~~~" or "**제목**: ~~~"
-  const parseContent = () => {
-    const lines = generatedText.split("\n");
+  const parseContent = (text: string) => {
+    const lines = text.split("\n");
     let title = "";
     let bodyLines: string[] = [];
     let isExtractingTitle = false;
@@ -29,9 +33,21 @@ export function ReviewOutput({ generatedText, onReset, storeName }: ReviewOutput
       const line = lines[i].trim();
       
       // Look for custom title markups or markdown header
-      if (line.startsWith("#") || line.toLowerCase().includes("제목") || line.startsWith("**[제목]**") || line.startsWith("[제목]")) {
+      if (
+        line.startsWith("#") || 
+        line.toLowerCase().includes("제목") || 
+        line.startsWith("**[제목]**") || 
+        line.startsWith("[제목]")
+      ) {
         // Clean up markdown markers
-        title = line.replace(/^#\s*/, "").replace(/^[제목]:\s*/, "").replace(/^\*\*\[제목\]\*\*:\s*/, "").replace(/^\[제목\]\s*/, "").replace(/^\*\*/, "").replace(/\*\*$/, "");
+        title = line
+          .replace(/^#\s*/, "")
+          .replace(/^[제목]:\s*/, "")
+          .replace(/^\*\*\[제목\]\*\*:\s*/, "")
+          .replace(/^\[제목\]\s*/, "")
+          .replace(/^\*\*/, "")
+          .replace(/\*\*$/, "")
+          .trim();
         isExtractingTitle = true;
         continue;
       }
@@ -48,24 +64,29 @@ export function ReviewOutput({ generatedText, onReset, storeName }: ReviewOutput
     const bodyText = bodyLines.join("\n").trim();
     return {
       title: title || `${storeName} 고품질 네이버 블로그 리뷰`,
-      body: bodyText || generatedText,
+      body: bodyText || text,
     };
   };
 
-  const { title, body } = parseContent();
+  // Sync state whenever the generatedText changes (e.g., from loading a history item)
+  useEffect(() => {
+    const parsed = parseContent(generatedText);
+    setEditedTitle(parsed.title);
+    setEditedBody(parsed.body);
+  }, [generatedText]);
 
-  // Dynamic Metrics for SEO recommendation
-  const charWithSpaces = generatedText.length;
-  const charWithoutSpaces = generatedText.replace(/\s+/g, "").length;
+  // Dynamic Metrics based on current EDITED text
+  const fullText = `[제목]\n${editedTitle}\n\n[본문]\n${editedBody}`;
+  const charWithSpaces = fullText.length;
+  const charWithoutSpaces = fullText.replace(/\s+/g, "").length;
   
   // Calculate specific SEO elements
-  const photoCount = (generatedText.match(/\[실제첨부 사진|\[사진/g) || []).length;
-  const hasTable = generatedText.includes("|") && generatedText.split("|").length > 4;
-  const codeHighlights = (generatedText.match(/\*\*[^*]+\*\*/g) || []).length;
+  const photoCount = (fullText.match(/\[실제첨부 사진|\[사진/g) || []).length;
+  const hasTable = fullText.includes("|") && fullText.split("|").length > 4;
 
   const handleDownloadTxt = () => {
     try {
-      const formattedText = `[네이버 블로그 기획 원고]\n\n■ 제목: ${title}\n\n■ 본문 원고:\n${body}\n\n-----------------------------\n* 본문 내 [실제첨부 사진] 표시를 확인하시어 해당 실물 사진을 교차 배치해 주십시오.`;
+      const formattedText = `[네이버 블로그 기획 원고]\n\n■ 제목: ${editedTitle}\n\n■ 본문 원고:\n${editedBody}\n\n-----------------------------\n* 본문 내 [실제첨부 사진] 표시를 확인하시어 해당 실물 사진을 교차 배치해 주십시오.`;
       const blob = new Blob([formattedText], { type: "text/plain;charset=utf-8" });
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -82,7 +103,7 @@ export function ReviewOutput({ generatedText, onReset, storeName }: ReviewOutput
 
   const handleCopyAll = async () => {
     try {
-      await navigator.clipboard.writeText(generatedText);
+      await navigator.clipboard.writeText(`제목: ${editedTitle}\n\n본문:\n${editedBody}`);
       setCopiedAll(true);
       setTimeout(() => setCopiedAll(false), 2000);
     } catch (err) {
@@ -92,7 +113,7 @@ export function ReviewOutput({ generatedText, onReset, storeName }: ReviewOutput
 
   const handleCopyTitle = async () => {
     try {
-      await navigator.clipboard.writeText(title);
+      await navigator.clipboard.writeText(editedTitle);
       setCopiedTitle(true);
       setTimeout(() => setCopiedTitle(false), 2000);
     } catch (err) {
@@ -102,7 +123,7 @@ export function ReviewOutput({ generatedText, onReset, storeName }: ReviewOutput
 
   const handleCopyBody = async () => {
     try {
-      await navigator.clipboard.writeText(body);
+      await navigator.clipboard.writeText(editedBody);
       setCopiedBody(true);
       setTimeout(() => setCopiedBody(false), 2000);
     } catch (err) {
@@ -123,11 +144,11 @@ export function ReviewOutput({ generatedText, onReset, storeName }: ReviewOutput
           신디사이즈 완료 원고
         </h2>
         <p className="text-[11.5px] text-neutral-500 mt-1">
-          네이버블로그 규격에 맞게 기획된 맞춤형 원고안입니다
+          가공 완성본을 실시간 수정하고 네이버 에디터에 대댓글까지 복사할 수 있습니다.
         </p>
       </div>
 
-      {/* Copy Actions Hub */}
+      {/* Copy Actions Hub (Operates on live edited data!) */}
       <div className="grid grid-cols-3 gap-2">
         <button
           onClick={handleCopyTitle}
@@ -158,12 +179,12 @@ export function ReviewOutput({ generatedText, onReset, storeName }: ReviewOutput
         </button>
       </div>
 
-      {/* Recommended New: Dynamic Text Analyzer Panel */}
+      {/* Recommended New: Dynamic Text Analyzer Panel (Updates in real-time as edits are typed!) */}
       <div className="border border-brand-border rounded-2xl p-4 bg-brand-bg/50 flex flex-col space-y-3.5 shadow-[inset_0_2px_4px_rgba(0,0,0,0.01)]">
         <div className="flex justify-between items-center pb-2 border-b border-brand-border/60">
           <span className="text-xs font-bold text-neutral-800 flex items-center gap-1">
             <span className="w-1.5 h-1.5 bg-brand-blue rounded-full" />
-            📊 원고 정밀 진단 통계
+            📊 원고 정밀 진단 통계 (실시간 연동)
           </span>
           <button
             onClick={handleDownloadTxt}
@@ -206,7 +227,7 @@ export function ReviewOutput({ generatedText, onReset, storeName }: ReviewOutput
                 {photoCount >= 3 ? "양호" : "추천"}
               </span>
               <span>
-                사진 매칭: {photoCount}개 ({photoCount >= 3 ? "단락 간 호흡과 배치 밸런스가 좋습니다." : "3개 블록 이상의 이미지 배치를 권정합니다."})
+                사진 매칭: {photoCount}개 ({photoCount >= 3 ? "단락 간 호흡과 배치 밸런스가 좋습니다." : "3개 블록 이상의 이미지 배치를 권장합니다."})
               </span>
             </div>
             <div className="flex items-start gap-2">
@@ -221,6 +242,32 @@ export function ReviewOutput({ generatedText, onReset, storeName }: ReviewOutput
         </div>
       </div>
 
+      {/* Mode Toggle Switcher */}
+      <div className="flex bg-neutral-100 p-1.5 rounded-2xl border border-neutral-200 shadow-sm">
+        <button
+          type="button"
+          onClick={() => setIsEditing(false)}
+          className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            !isEditing
+              ? "bg-white text-brand-blue shadow-sm border border-neutral-200/50"
+              : "text-neutral-500 hover:text-neutral-800"
+          }`}
+        >
+          👁️ 최종 블로그 미리보기
+        </button>
+        <button
+          type="button"
+          onClick={() => setIsEditing(true)}
+          className={`flex-1 py-2 text-xs font-bold rounded-xl transition-all flex items-center justify-center gap-1.5 ${
+            isEditing
+              ? "bg-white text-brand-blue shadow-sm border border-neutral-200/50"
+              : "text-neutral-500 hover:text-neutral-800"
+          }`}
+        >
+          📝 실시간 원고 수정하기
+        </button>
+      </div>
+
       {/* Structured Naver Blog Simulation Viewport */}
       <div className="border border-brand-border rounded-2xl p-4 bg-white shadow-sm space-y-4 max-h-[460px] overflow-y-auto leading-relaxed">
         
@@ -230,18 +277,50 @@ export function ReviewOutput({ generatedText, onReset, storeName }: ReviewOutput
           <span className="text-brand-blue">Category: Review Synth</span>
         </div>
 
-        {/* Clean render of Title */}
-        <div className="bg-blue-50/20 border border-blue-100/70 rounded-xl p-3.5">
-          <div className="text-[9px] text-brand-blue font-bold uppercase tracking-wider mb-1 font-mono">
-            ★ 네이버 최적화 블로그 제목
-          </div>
-          <h3 className="text-sm font-bold text-neutral-900 leading-snug">{title}</h3>
-        </div>
+        {isEditing ? (
+          <div className="space-y-4">
+            <div className="flex flex-col space-y-1">
+              <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider font-mono">
+                ★ 네이버 블로그 제목 편집
+              </label>
+              <input
+                type="text"
+                value={editedTitle}
+                onChange={(e) => setEditedTitle(e.target.value)}
+                className="w-full px-3 py-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs font-bold text-neutral-900 focus:outline-none focus:border-brand-blue focus:bg-white transition-all"
+                placeholder="제목을 입력하세요."
+              />
+            </div>
 
-        {/* Render Generated Body Text with customized css bindings */}
-        <div className="markdown-body text-xs text-neutral-800 space-y-3 prose prose-sm prose-stone max-w-none">
-          <Markdown>{body}</Markdown>
-        </div>
+            <div className="flex flex-col space-y-1">
+              <label className="text-[10px] font-bold text-neutral-500 uppercase tracking-wider font-mono">
+                ★ 본문 내용 자유 편집 (Markdown 지원)
+              </label>
+              <textarea
+                value={editedBody}
+                onChange={(e) => setEditedBody(e.target.value)}
+                rows={16}
+                className="w-full p-3 bg-neutral-50 border border-neutral-200 rounded-xl text-xs text-neutral-800 leading-relaxed font-sans focus:outline-none focus:border-brand-blue focus:bg-white transition-all resize-y min-h-[250px]"
+                placeholder="본문 내용을 입력하세요. 마크다운 기호를 활용해 이쁘게 꾸밀 수 있습니다."
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {/* Clean render of Title */}
+            <div className="bg-blue-50/20 border border-blue-100/70 rounded-xl p-3.5">
+              <div className="text-[9px] text-brand-blue font-bold uppercase tracking-wider mb-1 font-mono">
+                ★ 네이버 최적화 블로그 제목
+              </div>
+              <h3 className="text-sm font-bold text-neutral-900 leading-snug">{editedTitle}</h3>
+            </div>
+
+            {/* Render Generated Body Text with customized css bindings */}
+            <div className="markdown-body text-xs text-neutral-800 space-y-3 prose prose-sm prose-stone max-w-none">
+              <Markdown>{editedBody}</Markdown>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Copy warning / instructions */}
@@ -250,7 +329,7 @@ export function ReviewOutput({ generatedText, onReset, storeName }: ReviewOutput
           <span className="w-1.5 h-1.5 bg-brand-orange rounded-full" />
           💡 네이버 랭킹 업로드 공략
         </span>
-        <span className="pl-3 relative before:content-['•'] before:absolute before:left-0 text-neutral-650">복사한 원고를 블로그에 에디터에 자연스럽게 삽입하세요.</span>
+        <span className="pl-3 relative before:content-['•'] before:absolute before:left-0 text-neutral-650">복사한 원고를 블로그 에디터에 자연스럽게 삽입하세요.</span>
         <span className="pl-3 relative before:content-['•'] before:absolute before:left-0 text-neutral-650">원고 내 지정된 <span className="font-bold text-brand-blue bg-blue-50 px-1 py-0.2 rounded">[사진 X]</span> 가이드 위치마다 실제 소유하고 계신 촬영 이미지를 삽입하세요. 이미지의 유일성이 높을수록 정합도와 점수가 대폭 향상됩니다.</span>
       </div>
 
