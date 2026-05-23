@@ -28,6 +28,27 @@ function getGeminiClient() {
   return aiClient;
 }
 
+// Safe base64 data url parser to prevent catastrophic backtracking (ReDoS) on large uploads
+function parseDataUrl(dataUrl: string) {
+  let mimeType = "image/png";
+  let dataToUse = dataUrl;
+
+  if (typeof dataUrl === "string" && dataUrl.startsWith("data:")) {
+    const commaIndex = dataUrl.indexOf(",");
+    if (commaIndex !== -1) {
+      const meta = dataUrl.substring(0, commaIndex);
+      dataToUse = dataUrl.substring(commaIndex + 1);
+      
+      const mimeMatch = meta.match(/^data:([^;]+)/);
+      if (mimeMatch) {
+        mimeType = mimeMatch[1].toLowerCase();
+      }
+    }
+  }
+
+  return { mimeType, dataToUse };
+}
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -70,21 +91,11 @@ async function startServer() {
       const screenshotParts = images
         .filter((imgStr: any) => typeof imgStr === "string" && imgStr)
         .map((imgStr: string) => {
-          let mimeType = "image/png";
-          let base64Data = imgStr;
-
-          if (imgStr.startsWith("data:")) {
-            const match = imgStr.match(/^data:([^;]+);base64,(.+)$/);
-            if (match) {
-              mimeType = match[1];
-              base64Data = match[2];
-            }
-          }
-
+          const { mimeType, dataToUse } = parseDataUrl(imgStr);
           return {
             inlineData: {
               mimeType,
-              data: base64Data,
+              data: dataToUse,
             },
           };
         });
@@ -93,21 +104,11 @@ async function startServer() {
       const visitParts = visitImages
         .filter((imgObj: any) => imgObj && imgObj.dataUrl)
         .map((imgObj: any) => {
-          let mimeType = "image/png";
-          let base64Data = imgObj.dataUrl;
-
-          if (base64Data.startsWith("data:")) {
-            const match = base64Data.match(/^data:([^;]+);base64,(.+)$/);
-            if (match) {
-              mimeType = match[1];
-              base64Data = match[2];
-            }
-          }
-
+          const { mimeType, dataToUse } = parseDataUrl(imgObj.dataUrl);
           return {
             inlineData: {
               mimeType,
-              data: base64Data,
+              data: dataToUse,
             },
           };
         });
@@ -116,21 +117,11 @@ async function startServer() {
       const guidelineParts = guidelineImages
         .filter((imgStr: any) => typeof imgStr === "string" && imgStr)
         .map((imgStr: string) => {
-          let mimeType = "image/png";
-          let base64Data = imgStr;
-
-          if (imgStr.startsWith("data:")) {
-            const match = imgStr.match(/^data:([^;]+);base64,(.+)$/);
-            if (match) {
-              mimeType = match[1];
-              base64Data = match[2];
-            }
-          }
-
+          const { mimeType, dataToUse } = parseDataUrl(imgStr);
           return {
             inlineData: {
               mimeType,
-              data: base64Data,
+              data: dataToUse,
             },
           };
         });
@@ -297,16 +288,7 @@ ${visitMetaInfo || "등록된 본문 실물 사진 없음 (자연스러운 일�
         });
       }
 
-      let mimeType = "image/png";
-      let base64Data = fileDataUrl;
-
-      if (fileDataUrl.startsWith("data:")) {
-        const match = fileDataUrl.match(/^data:([^;]+).*;base64,(.+)$/);
-        if (match) {
-          mimeType = match[1].toLowerCase();
-          base64Data = match[2];
-        }
-      }
+      const { mimeType, dataToUse: base64Data } = parseDataUrl(fileDataUrl);
 
       const promptText = `
 업로드된 가이드라인 이미지 또는 참고 자료 이미지 [${fileName || "가이드 파일"}]를 읽고, 리뷰를 작성할 때 꼭 지켜야 하는 조건과 기법을 정밀 분석해 주세요.
