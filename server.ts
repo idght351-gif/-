@@ -38,12 +38,18 @@ async function startServer() {
         storeName,
         storeCategory,
         tone = "neutral",
-        keywords = [],
+        keywords: rawKeywords,
         guidelines = "",
-        images = [], // Array of base64 data URLs
-        visitImages = [], // Array of { id, name, dataUrl } for actual visit photos
-        guidelineImages = [], // Array of base64 data URLs for guideline caps
+        images: rawImages,
+        visitImages: rawVisitImages,
+        guidelineImages: rawGuidelineImages,
       } = req.body;
+
+      // Defensive checking for arrays
+      const keywords = Array.isArray(rawKeywords) ? rawKeywords : [];
+      const images = Array.isArray(rawImages) ? rawImages : [];
+      const visitImages = Array.isArray(rawVisitImages) ? rawVisitImages : [];
+      const guidelineImages = Array.isArray(rawGuidelineImages) ? rawGuidelineImages : [];
 
       let ai;
       try {
@@ -56,67 +62,73 @@ async function startServer() {
       }
 
       // Convert screenshots to Gemini inline data
-      const screenshotParts = images.map((imgStr: string, idx: number) => {
-        let mimeType = "image/png";
-        let base64Data = imgStr;
+      const screenshotParts = images
+        .filter((imgStr: any) => typeof imgStr === "string" && imgStr)
+        .map((imgStr: string) => {
+          let mimeType = "image/png";
+          let base64Data = imgStr;
 
-        if (imgStr.startsWith("data:")) {
-          const match = imgStr.match(/^data:([^;]+);base64,(.+)$/);
-          if (match) {
-            mimeType = match[1];
-            base64Data = match[2];
+          if (imgStr.startsWith("data:")) {
+            const match = imgStr.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              mimeType = match[1];
+              base64Data = match[2];
+            }
           }
-        }
 
-        return {
-          inlineData: {
-            mimeType,
-            data: base64Data,
-          },
-        };
-      });
+          return {
+            inlineData: {
+              mimeType,
+              data: base64Data,
+            },
+          };
+        });
 
       // Convert ordered visit images to Gemini inline data
-      const visitParts = visitImages.map((imgObj: any, idx: number) => {
-        let mimeType = "image/png";
-        let base64Data = imgObj.dataUrl;
+      const visitParts = visitImages
+        .filter((imgObj: any) => imgObj && imgObj.dataUrl)
+        .map((imgObj: any) => {
+          let mimeType = "image/png";
+          let base64Data = imgObj.dataUrl;
 
-        if (imgObj.dataUrl.startsWith("data:")) {
-          const match = imgObj.dataUrl.match(/^data:([^;]+);base64,(.+)$/);
-          if (match) {
-            mimeType = match[1];
-            base64Data = match[2];
+          if (base64Data.startsWith("data:")) {
+            const match = base64Data.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              mimeType = match[1];
+              base64Data = match[2];
+            }
           }
-        }
 
-        return {
-          inlineData: {
-            mimeType,
-            data: base64Data,
-          },
-        };
-      });
+          return {
+            inlineData: {
+              mimeType,
+              data: base64Data,
+            },
+          };
+        });
 
       // Convert guideline images/PDFs/files to Gemini inline data
-      const guidelineParts = guidelineImages.map((imgStr: string) => {
-        let mimeType = "image/png";
-        let base64Data = imgStr;
+      const guidelineParts = guidelineImages
+        .filter((imgStr: any) => typeof imgStr === "string" && imgStr)
+        .map((imgStr: string) => {
+          let mimeType = "image/png";
+          let base64Data = imgStr;
 
-        if (imgStr.startsWith("data:")) {
-          const match = imgStr.match(/^data:([^;]+);base64,(.+)$/);
-          if (match) {
-            mimeType = match[1];
-            base64Data = match[2];
+          if (imgStr.startsWith("data:")) {
+            const match = imgStr.match(/^data:([^;]+);base64,(.+)$/);
+            if (match) {
+              mimeType = match[1];
+              base64Data = match[2];
+            }
           }
-        }
 
-        return {
-          inlineData: {
-            mimeType,
-            data: base64Data,
-          },
-        };
-      });
+          return {
+            inlineData: {
+              mimeType,
+              data: base64Data,
+            },
+          };
+        });
 
       // Assemble tone description
       let toneGuide = "";
@@ -229,7 +241,12 @@ ${visitMetaInfo || "등록된 본문 실물 사진 없음 (자연스러운 일�
 
       const response = await ai.models.generateContent({
         model: "gemini-3.5-flash",
-        contents: { parts },
+        contents: [
+          {
+            role: "user",
+            parts: parts,
+          }
+        ],
         config: {
           temperature: 0.8,
           systemInstruction: "당신은 네이버 최고 등급의 맛집/카페/라이프스타일 상위 노출 전문 카피라이터 대행 파워블로거입니다. 특히 사용자가 제공한 실물 사진의 순서와 시각적 가치를 정확히 감정하고 문맥에 맞게 글과 사진이 교차 배치되는 완성도 높은 모바일 최적화 포스팅 원고를 책임집니다.",
@@ -249,6 +266,106 @@ ${visitMetaInfo || "등록된 본문 실물 사진 없음 (자연스러운 일�
         success: false,
         error: "Generation Failed",
         message: error.message || "리뷰 생성 도중 에러가 발생했습니다."
+      });
+    }
+  });
+
+  // API Route: Analyze Guideline Image/PDF to extract text guidelines
+  app.post("/api/analyze-guideline", async (req, res) => {
+    try {
+      const { fileDataUrl, fileName } = req.body;
+      if (!fileDataUrl) {
+        return res.status(400).json({ error: "No file data provided" });
+      }
+
+      let ai;
+      try {
+        ai = getGeminiClient();
+      } catch (err: any) {
+        return res.status(400).json({
+          error: "API Key Missing",
+          message: err.message,
+        });
+      }
+
+      let mimeType = "image/png";
+      let base64Data = fileDataUrl;
+
+      if (fileDataUrl.startsWith("data:")) {
+        const match = fileDataUrl.match(/^data:([^;]+);base64,(.+)$/);
+        if (match) {
+          mimeType = match[1];
+          base64Data = match[2];
+        }
+      }
+
+      const promptText = `
+업로드된 가이드라인 이미지 또는 참고 자료 이미지 [${fileName || "가이드 파일"}]를 읽고, 리뷰를 작성할 때 꼭 지켜야 하는 조건과 기법을 정밀 분석해 주세요.
+
+## 다음 항목들을 빠짐없이 찾아서 한글로 요약 보고서 형태로 추출해 주세요:
+1. **타겟 키워드 / 필수 노출 키워드** (예: @@맛집, @@추천 등 강조해야 할 단어들)
+2. **글 필수 조건 및 강조 사항** (예: 지도 삽입 여부, 사진 개수 만족선, 글자수 제한, 영상 필수 첨부 정보, 특정 글귀 명시 등)
+3. **금지 제한 요소** (예: 가격 노출 불가, 특정 단어 사용 금지, 대가가 없는 척 내돈내산 강요 금지 등)
+4. **리뷰 핵심 소구점 / 가이드라인 포인트** (예: 음식 비주얼 극찬, 인테리어 모던함 강조 등)
+
+반드시 한글로 작성해 주세요.
+`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: [
+          {
+            inlineData: {
+              mimeType,
+              data: base64Data,
+            },
+          },
+          { text: promptText },
+        ],
+        config: {
+          temperature: 0.1, // Low temp for accurate text extraction
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: "OBJECT",
+            properties: {
+              reportText: {
+                type: "STRING",
+                description: "가이드라인 내용들을 대제목/소제목 및 목록 기호로 한글화하여 잘 정돈한 마크다운 양식 요약 텍스트"
+              },
+              extractedKeywords: {
+                type: "ARRAY",
+                items: { type: "STRING" },
+                description: "가이드 이미지/문서 내에서 반드시 제목이나 본문에 들어가야 할 대표 노출 조건 검색 키워드 단어들 (예: '홍대맛집', '라멘추천'). '#' 기호나 공백, 따옴표 없이 순수한 완성형 단어로 추출해야 합니다."
+              }
+            },
+            required: ["reportText", "extractedKeywords"]
+          }
+        }
+      });
+
+      const responseText = response.text || "";
+      let parsedResult = { reportText: "", extractedKeywords: [] as string[] };
+      try {
+        parsedResult = JSON.parse(responseText);
+      } catch (err) {
+        console.error("JSON parsing of guideline extraction failed, fallback text search", err);
+        parsedResult = {
+          reportText: responseText,
+          extractedKeywords: []
+        };
+      }
+
+      return res.json({ 
+        success: true, 
+        text: parsedResult.reportText || responseText,
+        keywords: parsedResult.extractedKeywords || []
+      });
+    } catch (error: any) {
+      console.error("Analyze guideline error:", error);
+      return res.status(500).json({
+        success: false,
+        error: "Analysis Failed",
+        message: error.message || "가이드라인 분석 도중 오류가 발생했습니다."
       });
     }
   });

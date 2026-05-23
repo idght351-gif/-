@@ -48,6 +48,7 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
   const [isDragOverVisit, setIsDragOverVisit] = useState(false);
   const [isDragOverDoc, setIsDragOverDoc] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [isAnalyzingGuideline, setIsAnalyzingGuideline] = useState(false);
 
   // Handle reference uploads (style screenshots, PDFs, documents)
   const processImageFiles = (files: FileList) => {
@@ -85,26 +86,37 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
     });
   };
 
-  // New: Handle visit images uploads with sequential ordering
-  const processVisitImageFiles = (files: FileList) => {
+  // New: Handle visit images uploads with sequential ordering (preserving exact selection order)
+  const processVisitImageFiles = async (files: FileList) => {
     const filesToProcess = Array.from(files).filter((file) => file.type.startsWith("image/"));
-
-    filesToProcess.forEach((file) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === "string") {
-          const newUploaded: UploadedFile = {
-            id: crypto.randomUUID(),
-            name: file.name,
-            size: file.size,
-            type: file.type,
-            dataUrl: reader.result,
-          };
-          setVisitImages((prev) => [...prev, newUploaded]);
-        }
-      };
-      reader.readAsDataURL(file);
+    
+    const loadedFilesPromises = filesToProcess.map((file) => {
+      return new Promise<UploadedFile>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          if (typeof reader.result === "string") {
+            resolve({
+              id: crypto.randomUUID(),
+              name: file.name,
+              size: file.size,
+              type: file.type,
+              dataUrl: reader.result,
+            });
+          } else {
+            reject(new Error("Failed to read file"));
+          }
+        };
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
     });
+
+    try {
+      const newImages = await Promise.all(loadedFilesPromises);
+      setVisitImages((prev) => [...prev, ...newImages]);
+    } catch (err) {
+      console.error("Error loading visit images in sequence:", err);
+    }
   };
 
   const handleImageChange = (e: ChangeEvent<HTMLInputElement>) => {
@@ -183,64 +195,130 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
   };
 
   // Handle guidelines document/screenshot upload (supports txt, docx, pdf, png, jpg etc.)
-  const processDocFile = (file: File) => {
-    // If it is an image or PDF, read it as Data URL as well and add to guidelineImages state for Gemini to read natively!
-    if (file.type.startsWith("image/") || file.type === "application/pdf" || file.name.endsWith(".pdf")) {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === "string") {
-          const newUploaded: UploadedFile = {
-            id: crypto.randomUUID(),
-            name: file.name,
-            size: file.size,
-            type: file.type || "application/pdf",
-            dataUrl: reader.result,
-          };
-          setGuidelineImages((prev) => [...prev, newUploaded]);
-        }
-      };
-      reader.readAsDataURL(file);
-    }
+  const processDocFiles = async (files: FileList | File[]) => {
+    const filesArray = Array.from(files);
+    if (!filesArray.length) return;
 
-    setGuidelinesFileName(file.name);
-    
-    // Auto-populate description in the textbox
-    if (file.type === "text/plain" || file.name.endsWith(".txt")) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        if (e.target?.result && typeof e.target.result === "string") {
-          setGuidelinesText(e.target.result);
-        }
-      };
-      reader.readAsText(file);
-    } else if (file.type.startsWith("image/")) {
-      setGuidelinesText((prev) => {
-        const banner = `[${file.name} 가이드라인 이미지가 시각 분석용으로 업로드되었습니다.]`;
-        return prev ? `${prev}\n${banner}` : banner;
-      });
-    } else if (file.type === "application/pdf" || file.name.endsWith(".pdf")) {
-      setGuidelinesText((prev) => {
-        const banner = `[${file.name} 가이드라인 PDF 문서가 다층 분석용으로 업로드되었습니다.]`;
-        return prev ? `${prev}\n${banner}` : banner;
-      });
-    } else {
-      setGuidelinesText(
-        `[${file.name} 가이드라인 파일이 분석용으로 등록되었습니다.]\n본문에 들어갈 필수 문구, 금지어, 필수 첨부 키워드 등을 직접 추가로 편집해 주시면 리뷰 반영 완성도가 더욱 매끄러워집니다.`
-      );
+    // Append file names
+    setGuidelinesFileName((prev) => {
+      const names = filesArray.map(f => f.name);
+      return prev ? `${prev}, ${names.join(", ")}` : names.join(", ");
+    });
+
+    for (const file of filesArray) {
+      if (file.type === "text/plain" || file.name.endsWith(".txt")) {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+          if (e.target?.result && typeof e.target.result === "string") {
+            setGuidelinesText((prev) => {
+              const header = `■ [문서 가이드: ${file.name}]\n`;
+              return prev ? `${prev}\n\n${header}${e.target.result}` : `${header}${e.target.result}`;
+            });
+          }
+        };
+        reader.readAsText(file);
+      } else if (file.type.startsWith("image/") || file.type === "application/pdf" || file.name.endsWith(".pdf")) {
+        await new Promise<void>((resolve) => {
+          const reader = new FileReader();
+          reader.onloadend = async () => {
+            if (typeof reader.result === "string") {
+              const fileDataUrl = reader.result;
+              const newUploaded: UploadedFile = {
+                id: crypto.randomUUID(),
+                name: file.name,
+                size: file.size,
+                type: file.type || "application/pdf",
+                dataUrl: fileDataUrl,
+              };
+              setGuidelineImages((prev) => [...prev, newUploaded]);
+
+              // Start visual/text extraction analysis via Gemini API
+              setIsAnalyzingGuideline(true);
+              const loadingBanner = `[✨ AI 모델이 '${file.name}' 가이드라인을 스캔하여 글의 핵심 규칙 목록을 정밀 분석하는 중입니다...]`;
+              setGuidelinesText((prev) => {
+                return prev ? `${prev}\n\n${loadingBanner}` : loadingBanner;
+              });
+
+              try {
+                const response = await fetch("/api/analyze-guideline", {
+                  method: "POST",
+                  headers: {
+                    "Content-Type": "application/json",
+                  },
+                  body: JSON.stringify({
+                    fileDataUrl,
+                    fileName: file.name,
+                  }),
+                });
+                const data = await response.json();
+                if (data.success && data.text) {
+                  setGuidelinesText((prev) => {
+                    const cleaned = prev.replace(loadingBanner, "").trim();
+                    const contentText = `■ 가이드 및 우수리뷰 [${file.name}] AI 정밀 추출 기준:\n${data.text}`;
+                    return cleaned ? `${cleaned}\n\n${contentText}` : contentText;
+                  });
+
+                  // Add keywords to step 4 keywords state list safely
+                  if (data.keywords && Array.isArray(data.keywords)) {
+                    const cleanedExtracted = data.keywords
+                      .map((k: string) => k.replace(/#/g, "").trim())
+                      .filter((k: string) => k.length > 0);
+
+                    if (cleanedExtracted.length > 0) {
+                      setKeywords((prev) => {
+                        const merged = [...prev];
+                        cleanedExtracted.forEach((k: string) => {
+                          if (!merged.includes(k)) {
+                            merged.push(k);
+                          }
+                        });
+                        return merged;
+                      });
+                    }
+                  }
+                } else {
+                  setGuidelinesText((prev) => {
+                    const cleaned = prev.replace(loadingBanner, "").trim();
+                    const errorBanner = `[⚠️ '${file.name}' 가이드 이미지 상세 분석 실패: ${data.message || "알 수 없는 오류"}]`;
+                    return cleaned ? `${cleaned}\n\n${errorBanner}` : errorBanner;
+                  });
+                }
+              } catch (err: any) {
+                setGuidelinesText((prev) => {
+                  const cleaned = prev.replace(loadingBanner, "").trim();
+                  const errorBanner = `[⚠️ '${file.name}' 분석 연동 실패: ${err.message || "연결이 마이크로하게 지연되었습니다"}]`;
+                  return cleaned ? `${cleaned}\n\n${errorBanner}` : errorBanner;
+                });
+              } finally {
+                setIsAnalyzingGuideline(false);
+                resolve();
+              }
+            } else {
+              resolve();
+            }
+          };
+          reader.readAsDataURL(file);
+        });
+      } else {
+        setGuidelinesText((prev) => {
+          const itemText = `[${file.name} 가이드라인 파일이 분석용으로 등록되었습니다.]\n본문에 들어갈 필수 문구, 금지어, 필수 첨부 키워드 등을 직접 추가로 편집해 주시면 리뷰 반영 완성도가 더욱 매끄러워집니다.`;
+          return prev ? `${prev}\n\n${itemText}` : itemText;
+        });
+      }
     }
   };
 
   const handleDocChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      processDocFile(e.target.files[0]);
+    if (e.target.files) {
+      processDocFiles(e.target.files);
     }
   };
 
   const handleDocDrop = (e: DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     setIsDragOverDoc(false);
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      processDocFile(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files) {
+      processDocFiles(e.dataTransfer.files);
     }
   };
 
@@ -493,9 +571,9 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
           {visitImages.length > 0 && (
             <div className="space-y-2 mt-2">
               <span className="text-[10px] text-brand-blue block font-bold">
-                * 사진 순서 정렬 (마우스로 잡고 드래그하거나 버튼을 누르면 순서가 바뀝니다)
+                * 사진 순서 정렬 (마우스로 잡아 드래그하거나 아래 화살표 버튼으로 정렬 변경 가능)
               </span>
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <AnimatePresence>
                   {visitImages.map((file, idx) => (
                     <motion.div
@@ -507,66 +585,65 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
                       onDragStart={(e: any) => handleDragStart(e, idx)}
                       onDragOver={(e: any) => handleDragOver(e, idx)}
                       onDragEnd={handleDragEnd}
-                      className={`relative p-2.5 border rounded-xl shadow-sm flex items-center gap-2 overflow-hidden transition-all select-none ${
+                      className={`relative border rounded-2xl shadow-sm overflow-hidden transition-all select-none aspect-square group ${
                         draggedIndex === idx 
-                          ? "opacity-30 border-brand-orange bg-amber-50/10 scale-95" 
-                          : "border-brand-border bg-white cursor-grab active:cursor-grabbing hover:bg-neutral-50/50"
+                          ? "opacity-30 border-brand-orange scale-95 ring-2 ring-brand-orange" 
+                          : "border-brand-border bg-white cursor-grab active:cursor-grabbing hover:shadow-md hover:border-brand-blue"
                       }`}
                     >
-                      {/* Order Badge (Accent Orange LockBox Style) */}
-                      <div className="w-5 h-5 rounded-full bg-brand-orange text-white text-[10px] font-mono font-bold flex items-center justify-center shrink-0 shadow-sm">
+                      {/* Fully Filling Image Preview */}
+                      <img
+                        src={file.dataUrl}
+                        alt="Visit Thumbnail"
+                        className="w-full h-full object-cover pointer-events-none"
+                      />
+
+                      {/* Floating Sequential Order Badge (Top-Left) */}
+                      <div className="absolute top-2 left-2 bg-brand-orange text-white text-xs font-mono font-bold w-6 h-6 rounded-full flex items-center justify-center shadow-lg transition-transform group-hover:scale-110 z-10">
                         {idx + 1}
                       </div>
 
-                      <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-brand-border pointer-events-none">
-                        <img
-                          src={file.dataUrl}
-                          alt="Seq Thumbnail"
-                          className="w-full h-full object-cover"
-                        />
-                      </div>
-
-                      <div className="flex-1 min-w-0 flex flex-col justify-center">
-                        <span className="text-[10px] text-neutral-500 font-bold font-mono block">
-                          사진 {idx + 1}
-                        </span>
-                        {/* Sort Controller */}
-                        <div className="flex gap-1 mt-1">
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              moveVisitImage(idx, "up");
-                            }}
-                            disabled={idx === 0}
-                            className="px-1.5 py-0.2 bg-white border border-neutral-200 hover:border-brand-blue disabled:opacity-30 rounded text-[9px] font-bold text-neutral-600 transition-colors shadow-sm cursor-pointer"
-                          >
-                            ◀
-                          </button>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              moveVisitImage(idx, "down");
-                            }}
-                            disabled={idx === visitImages.length - 1}
-                            className="px-1.5 py-0.2 bg-white border border-neutral-200 hover:border-brand-blue disabled:opacity-30 rounded text-[9px] font-bold text-neutral-600 transition-colors shadow-sm cursor-pointer"
-                          >
-                            ▶
-                          </button>
-                        </div>
-                      </div>
-
+                      {/* Floating Delete Button (Top-Right) */}
                       <button
                         type="button"
                         onClick={(e) => {
                           e.stopPropagation();
                           removeVisitImage(file.id);
                         }}
-                        className="text-neutral-400 hover:text-red-500 text-sm font-bold p-1 absolute top-1 right-1 z-10 cursor-pointer"
+                        className="absolute top-2 right-2 bg-neutral-900/60 hover:bg-neutral-900 text-white text-xs rounded-full w-6 h-6 flex items-center justify-center transition-all shadow-md cursor-pointer hover:scale-110 z-10"
+                        title="사진 삭제"
                       >
                         ×
                       </button>
+
+                      {/* Mini Sort Controller Bar (Overlay Bottom Center) */}
+                      <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-2 bg-white/95 backdrop-blur px-2.5 py-1 rounded-full shadow-md border border-neutral-100 z-10 opacity-90 hover:opacity-100 transition-opacity">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveVisitImage(idx, "up");
+                          }}
+                          disabled={idx === 0}
+                          className="text-[10px] text-neutral-700 hover:text-brand-blue hover:scale-120 disabled:opacity-20 disabled:hover:scale-100 p-0.5 cursor-pointer font-bold transition-all"
+                          title="앞으로 이동"
+                        >
+                          ◀
+                        </button>
+                        <span className="w-px h-2.5 bg-neutral-200" />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            moveVisitImage(idx, "down");
+                          }}
+                          disabled={idx === visitImages.length - 1}
+                          className="text-[10px] text-neutral-700 hover:text-brand-blue hover:scale-120 disabled:opacity-20 disabled:hover:scale-100 p-0.5 cursor-pointer font-bold transition-all"
+                          title="뒤로 이동"
+                        >
+                          ▶
+                        </button>
+                      </div>
                     </motion.div>
                   ))}
                 </AnimatePresence>
@@ -608,6 +685,7 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
               onChange={handleDocChange}
               accept=".txt,.doc,.docx,.pdf,.hwp,image/*"
               className="hidden"
+              multiple
               disabled={isLoading}
             />
             {guidelinesFileName ? (
@@ -671,16 +749,28 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
 
           {/* Guidelines Text Editor Pre-populate / Edit Area */}
           <div className="space-y-1">
-            <span className="text-[10px] font-bold text-neutral-500 block">
-              가이드라인 원고 반영 텍스트 편집
-            </span>
+            <div className="flex justify-between items-center text-[10px]">
+              <span className="font-bold text-neutral-500">
+                가이드라인 원고 반영 텍스트 편집
+              </span>
+              {isAnalyzingGuideline && (
+                <span className="flex items-center gap-1 text-brand-orange font-bold animate-pulse">
+                  <span className="w-1.5 h-1.5 bg-brand-orange rounded-full animate-ping" />
+                  AI 이미지 텍스트 추출 분석 중...
+                </span>
+              )}
+            </div>
             <textarea
               placeholder="파일 내용이나 작성 팁이 이곳에 자동 입력되며, 수동 보정도 가능합니다."
               value={guidelinesText}
               onChange={(e) => setGuidelinesText(e.target.value)}
-              disabled={isLoading}
-              rows={4}
-              className="w-full text-xs p-3 bg-neutral-50 border border-neutral-200 focus:border-brand-blue focus:bg-white outline-none rounded-lg resize-none font-mono transition-colors focus:ring-1 focus:ring-brand-blue"
+              disabled={isLoading || isAnalyzingGuideline}
+              rows={6}
+              className={`w-full text-xs p-3 bg-neutral-50 border outline-none rounded-lg resize-none font-mono transition-all focus:ring-1 ${
+                isAnalyzingGuideline 
+                  ? "border-brand-orange ring-1 ring-brand-orange bg-amber-50/5 text-neutral-500" 
+                  : "border-neutral-200 focus:border-brand-blue focus:bg-white focus:ring-brand-blue"
+              }`}
             />
           </div>
         </div>
