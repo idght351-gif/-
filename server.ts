@@ -301,9 +301,9 @@ ${visitMetaInfo || "등록된 본문 실물 사진 없음 (자연스러운 일�
       let base64Data = fileDataUrl;
 
       if (fileDataUrl.startsWith("data:")) {
-        const match = fileDataUrl.match(/^data:([^;]+);base64,(.+)$/);
+        const match = fileDataUrl.match(/^data:([^;]+).*;base64,(.+)$/);
         if (match) {
-          mimeType = match[1];
+          mimeType = match[1].toLowerCase();
           base64Data = match[2];
         }
       }
@@ -324,12 +324,17 @@ ${visitMetaInfo || "등록된 본문 실물 사진 없음 (자연스러운 일�
         model: "gemini-3.5-flash",
         contents: [
           {
-            inlineData: {
-              mimeType,
-              data: base64Data,
-            },
-          },
-          { text: promptText },
+            role: "user",
+            parts: [
+              {
+                inlineData: {
+                  mimeType,
+                  data: base64Data,
+                },
+              },
+              { text: promptText },
+            ],
+          }
         ],
         config: {
           temperature: 0.1, // Low temp for accurate text extraction

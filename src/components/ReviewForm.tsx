@@ -337,7 +337,28 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
                     fileName: file.name,
                   }),
                 });
-                const data = await response.json();
+
+                if (!response.ok) {
+                  const errorText = await response.text();
+                  let errMsg = `서버 오류 (Status: ${response.status})`;
+                  try {
+                    const parsed = JSON.parse(errorText);
+                    errMsg = parsed.message || parsed.error || errMsg;
+                  } catch (e) {
+                    if (errorText && errorText.length < 150) {
+                      errMsg = errorText;
+                    }
+                  }
+                  throw new Error(errMsg);
+                }
+
+                let data;
+                try {
+                  data = await response.json();
+                } catch (jsonErr) {
+                  throw new Error("서버 응답 형식이 올바르지 않습니다. (JSON 변환 실패)");
+                }
+
                 if (data.success && data.text) {
                   setGuidelinesText((prev) => {
                     const cleaned = prev.replace(loadingBanner, "").trim();
