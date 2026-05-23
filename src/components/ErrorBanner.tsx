@@ -1,6 +1,8 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
+ * 
+ * Version: 1.0.4 - Touch Drag & SEO scoring optimized
  */
 
 import { motion } from "motion/react";

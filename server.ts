@@ -1,3 +1,8 @@
+/**
+ * Naver Blog Review Generator Server
+ * Version: 1.0.4 - Touch Drag & SEO scoring optimized
+ */
+
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
