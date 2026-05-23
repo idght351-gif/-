@@ -82,7 +82,6 @@ export function ReviewOutput({ generatedText, onReset, storeName }: ReviewOutput
   
   // Calculate specific SEO elements
   const photoCount = (fullText.match(/\[실제첨부 사진|\[사진/g) || []).length;
-  const hasTable = fullText.includes("|") && fullText.split("|").length > 4;
 
   const handleDownloadTxt = () => {
     try {
@@ -228,14 +227,6 @@ export function ReviewOutput({ generatedText, onReset, storeName }: ReviewOutput
               </span>
               <span>
                 사진 매칭: {photoCount}개 ({photoCount >= 3 ? "단락 간 호흡과 배치 밸런스가 좋습니다." : "3개 블록 이상의 이미지 배치를 권장합니다."})
-              </span>
-            </div>
-            <div className="flex items-start gap-2">
-              <span className={`shrink-0 text-[9px] px-1.5 py-0.2 rounded font-bold ${hasTable ? "bg-emerald-50 text-emerald-600" : "bg-neutral-100 text-neutral-500"}`}>
-                {hasTable ? "적용" : "정보"}
-              </span>
-              <span>
-                이용 정보: {hasTable ? "메뉴 리스트가 일목요연한 표 가독성을 확보했습니다." : "메뉴/가격 표가 빠졌습니다. (상위 글 작성 시 삽입 권장)"}
               </span>
             </div>
           </div>
