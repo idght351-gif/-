@@ -18,7 +18,7 @@ export function WritingTipsPanel({ onApplyPreset }: WritingTipsPanelProps) {
       rules: `[네이버 DIA+ 로직 최적화 필수 지침]
 - 첫 세줄에서 불필요한 일기식 일상의 인사말은 건너뛰고 바로 본론을 제시하세요.
 - 매장의 특징적인 셀링포인트(예: 주차가능여부, 고기 구워주는 식당 등)를 확실히 알립니다.
-- 제공하는 모든 메뉴와 가격은 보기 편하게 반드시 [표(Table)] 형태로 정리해서 인입해 주세요.
+- 제공하는 모든 메뉴와 주력품목의 판매 가격은 자연스러운 줄글 형태로 상세히 설명해 주세요.
 - 실제 방문 사진들을 글과 혼합하여 1번, 2번, 3번 순서대로 매끄럽게 이야기로 묘사합니다.`
     },
     {
@@ -71,8 +71,8 @@ export function WritingTipsPanel({ onApplyPreset }: WritingTipsPanelProps) {
                 ★, ⭕, ■ 같은 남발형 이모지는 검색 스팸 필터링 유발 대상입니다.
               </div>
               <div className="p-2.5 bg-brand-bg/40 border border-brand-border rounded-lg">
-                <span className="font-bold text-brand-blue block mb-0.5">3. 표(Table)로 가독성 UP</span>
-                메뉴 목록이나 가격 지수를 Markdown 표로 구성해 이탈률을 방지합니다.
+                <span className="font-bold text-brand-blue block mb-0.5">3. 대표 메뉴 상세 소개</span>
+                핵심 품목들의 가격 정보를 자연스럽고 정갈하게 나열하여 가독성을 극대화합니다.
               </div>
               <div className="p-2.5 bg-brand-bg/40 border border-brand-border rounded-lg">
                 <span className="font-bold text-brand-blue block mb-0.5">4. 실제 사진 설명 일치</span>

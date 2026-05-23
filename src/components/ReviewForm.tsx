@@ -49,6 +49,12 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
   const [isDragOverVisit, setIsDragOverVisit] = useState(false);
   const [isDragOverDoc, setIsDragOverDoc] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  
+  // Touch drag states for mobile sorting
+  const [touchDraggedIndex, setTouchDraggedIndex] = useState<number | null>(null);
+  const touchTimeoutRef = useRef<any>(null);
+  const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
+
   const [isAnalyzingGuideline, setIsAnalyzingGuideline] = useState(false);
 
   // Handle reference uploads (style screenshots, PDFs, documents)
@@ -193,6 +199,84 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
 
   const handleDragEnd = () => {
     setDraggedIndex(null);
+  };
+
+  // Touch drag and drop sorting handlers for mobile
+  const handleTouchStart = (e: React.TouchEvent, index: number) => {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    
+    // Store original touch coordinates
+    touchStartPosRef.current = { x: touch.clientX, y: touch.clientY };
+    
+    // Reset timer
+    if (touchTimeoutRef.current) {
+      clearTimeout(touchTimeoutRef.current);
+    }
+    
+    // Initiate visual hold state after 150ms to verify user is intentional
+    touchTimeoutRef.current = setTimeout(() => {
+      setTouchDraggedIndex(index);
+      if (typeof navigator !== "undefined" && navigator.vibrate) {
+        navigator.vibrate(30);
+      }
+    }, 150);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+
+    // If drag hasn't activated yet, detect if movement indicates quick scrolling instead
+    if (touchDraggedIndex === null) {
+      if (touchStartPosRef.current) {
+        const dx = Math.abs(touch.clientX - touchStartPosRef.current.x);
+        const dy = Math.abs(touch.clientY - touchStartPosRef.current.y);
+        if (dx > 10 || dy > 10) {
+          if (touchTimeoutRef.current) {
+            clearTimeout(touchTimeoutRef.current);
+            touchTimeoutRef.current = null;
+          }
+        }
+      }
+      return;
+    }
+
+    // Active drag sorting -> prevent browser generic scroll
+    if (e.cancelable) {
+      e.preventDefault();
+    }
+
+    // Capture element under touch finger
+    const element = document.elementFromPoint(touch.clientX, touch.clientY);
+    if (!element) return;
+
+    const cardEl = element.closest("[data-sort-index]");
+    if (!cardEl) return;
+
+    const targetIndexAttr = cardEl.getAttribute("data-sort-index");
+    if (targetIndexAttr === null) return;
+
+    const targetIndex = parseInt(targetIndexAttr, 10);
+    if (isNaN(targetIndex) || targetIndex === touchDraggedIndex) return;
+
+    // Perform state array sorting transition
+    const updated = [...visitImages];
+    const draggedItem = updated[touchDraggedIndex];
+    updated.splice(touchDraggedIndex, 1);
+    updated.splice(targetIndex, 0, draggedItem);
+
+    setTouchDraggedIndex(targetIndex);
+    setVisitImages(updated);
+  };
+
+  const handleTouchEnd = () => {
+    if (touchTimeoutRef.current) {
+      clearTimeout(touchTimeoutRef.current);
+      touchTimeoutRef.current = null;
+    }
+    setTouchDraggedIndex(null);
+    touchStartPosRef.current = null;
   };
 
   // Handle guidelines document/screenshot upload (supports txt, docx, pdf, png, jpg etc.)
@@ -594,7 +678,7 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
           {visitImages.length > 0 && (
             <div className="space-y-2 mt-2">
               <span className="text-[10px] text-brand-blue block font-bold">
-                * 사진 순서 정렬 (마우스로 잡아 드래그하거나 아래 화살표 버튼으로 정렬 변경 가능)
+                * 사진 순서 정렬 (모바일은 꾹 누른 채 드래그하거나 아래 화살표 버튼으로 정렬이 가능합니다)
               </span>
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 <AnimatePresence>
@@ -608,10 +692,14 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
                       onDragStart={(e: any) => handleDragStart(e, idx)}
                       onDragOver={(e: any) => handleDragOver(e, idx)}
                       onDragEnd={handleDragEnd}
+                      onTouchStart={(e: any) => handleTouchStart(e, idx)}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={handleTouchEnd}
+                      data-sort-index={idx}
                       className={`relative border rounded-2xl shadow-sm overflow-hidden transition-all select-none aspect-square group ${
-                        draggedIndex === idx 
-                          ? "opacity-30 border-brand-orange scale-95 ring-2 ring-brand-orange" 
-                          : "border-brand-border bg-white cursor-grab active:cursor-grabbing hover:shadow-md hover:border-brand-blue"
+                        draggedIndex === idx || touchDraggedIndex === idx
+                          ? "opacity-30 border-brand-orange scale-95 ring-2 ring-brand-orange z-20 touch-none" 
+                          : "border-brand-border bg-white cursor-grab active:cursor-grabbing hover:shadow-md hover:border-brand-blue touch-pan-y"
                       }`}
                     >
                       {/* Fully Filling Image Preview */}
