@@ -6,3 +6,5 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Version: 1.0.4 sync

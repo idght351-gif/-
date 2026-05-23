@@ -1,6 +1,6 @@
 {
   "name": "Naver Blog Review Generator",
-  "description": "네이버 블로그 형식의 고품질 맞춤형 리뷰를 간편하게 제작해 주는 흑백 미니멀 감성의 모바일 전문 발전기입니다. 우수 리뷰 캡쳐본과 작성 기준을 학습하여 상금율 높은 전문 리뷰 본문을 구성합니다.",
+  "description": "네이버 블로그 형식의 고품질 맞춤형 리뷰를 간편하게 제작해 주는 흑백 미니멀 감성의 모바일 전문 발전기입니다. 우수 리뷰 캡쳐본과 작성 기준을 학습하여 상금율 높은 전문 리뷰 본문을 구성합니다. (v1.0.4)",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }
