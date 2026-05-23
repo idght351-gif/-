@@ -47,6 +47,7 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
   const [isDragOverImage, setIsDragOverImage] = useState(false);
   const [isDragOverVisit, setIsDragOverVisit] = useState(false);
   const [isDragOverDoc, setIsDragOverDoc] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
 
   // Handle reference uploads (style screenshots, PDFs, documents)
   const processImageFiles = (files: FileList) => {
@@ -157,6 +158,28 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
     updated[index] = updated[newIndex];
     updated[newIndex] = temp;
     setVisitImages(updated);
+  };
+
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+
+    const updated = [...visitImages];
+    const draggedItem = updated[draggedIndex];
+    updated.splice(draggedIndex, 1);
+    updated.splice(index, 0, draggedItem);
+
+    setDraggedIndex(index);
+    setVisitImages(updated);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
   };
 
   // Handle guidelines document/screenshot upload (supports txt, docx, pdf, png, jpg etc.)
@@ -470,7 +493,7 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
           {visitImages.length > 0 && (
             <div className="space-y-2 mt-2">
               <span className="text-[10px] text-brand-blue block font-bold">
-                * 사진 순서 정렬 (버튼으로 위치를 조정할 수 있습니다)
+                * 사진 순서 정렬 (마우스로 잡고 드래그하거나 버튼을 누르면 순서가 바뀝니다)
               </span>
               <div className="grid grid-cols-2 gap-2">
                 <AnimatePresence>
@@ -480,14 +503,22 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
                       initial={{ opacity: 0, scale: 0.95 }}
                       animate={{ opacity: 1, scale: 1 }}
                       exit={{ opacity: 0, scale: 0.95 }}
-                      className="relative p-2.5 border border-brand-border rounded-xl bg-white shadow-sm flex items-center gap-2 overflow-hidden"
+                      draggable={true}
+                      onDragStart={(e: any) => handleDragStart(e, idx)}
+                      onDragOver={(e: any) => handleDragOver(e, idx)}
+                      onDragEnd={handleDragEnd}
+                      className={`relative p-2.5 border rounded-xl shadow-sm flex items-center gap-2 overflow-hidden transition-all select-none ${
+                        draggedIndex === idx 
+                          ? "opacity-30 border-brand-orange bg-amber-50/10 scale-95" 
+                          : "border-brand-border bg-white cursor-grab active:cursor-grabbing hover:bg-neutral-50/50"
+                      }`}
                     >
                       {/* Order Badge (Accent Orange LockBox Style) */}
                       <div className="w-5 h-5 rounded-full bg-brand-orange text-white text-[10px] font-mono font-bold flex items-center justify-center shrink-0 shadow-sm">
                         {idx + 1}
                       </div>
 
-                      <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-brand-border">
+                      <div className="w-10 h-10 rounded-lg overflow-hidden shrink-0 border border-brand-border pointer-events-none">
                         <img
                           src={file.dataUrl}
                           alt="Seq Thumbnail"
@@ -496,24 +527,30 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
                       </div>
 
                       <div className="flex-1 min-w-0 flex flex-col justify-center">
-                        <span className="text-[10px] text-neutral-700 truncate font-bold font-mono block">
-                          {file.name}
+                        <span className="text-[10px] text-neutral-500 font-bold font-mono block">
+                          사진 {idx + 1}
                         </span>
                         {/* Sort Controller */}
                         <div className="flex gap-1 mt-1">
                           <button
                             type="button"
-                            onClick={() => moveVisitImage(idx, "up")}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              moveVisitImage(idx, "up");
+                            }}
                             disabled={idx === 0}
-                            className="px-1.5 py-0.2 bg-white border border-neutral-200 hover:border-brand-blue disabled:opacity-30 rounded text-[9px] font-bold text-neutral-600 transition-colors shadow-sm"
+                            className="px-1.5 py-0.2 bg-white border border-neutral-200 hover:border-brand-blue disabled:opacity-30 rounded text-[9px] font-bold text-neutral-600 transition-colors shadow-sm cursor-pointer"
                           >
                             ◀
                           </button>
                           <button
                             type="button"
-                            onClick={() => moveVisitImage(idx, "down")}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              moveVisitImage(idx, "down");
+                            }}
                             disabled={idx === visitImages.length - 1}
-                            className="px-1.5 py-0.2 bg-white border border-neutral-200 hover:border-brand-blue disabled:opacity-30 rounded text-[9px] font-bold text-neutral-600 transition-colors shadow-sm"
+                            className="px-1.5 py-0.2 bg-white border border-neutral-200 hover:border-brand-blue disabled:opacity-30 rounded text-[9px] font-bold text-neutral-600 transition-colors shadow-sm cursor-pointer"
                           >
                             ▶
                           </button>
@@ -522,8 +559,11 @@ export function ReviewForm({ onGenerate, isLoading }: ReviewFormProps) {
 
                       <button
                         type="button"
-                        onClick={() => removeVisitImage(file.id)}
-                        className="text-neutral-400 hover:text-red-500 text-sm font-bold p-1 absolute top-1 right-1"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          removeVisitImage(file.id);
+                        }}
+                        className="text-neutral-400 hover:text-red-500 text-sm font-bold p-1 absolute top-1 right-1 z-10 cursor-pointer"
                       >
                         ×
                       </button>
