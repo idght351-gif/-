@@ -21,6 +21,7 @@ export interface ReviewGenerationParams {
   tone: ReviewTone;
   keywords: string[];
   guidelines: string; // The guidelines text loaded from the uploaded file or manually written
+  personalExperience?: string; // Personal experience, anecdotes, or general opinions to incorporate into the final post
 }
 
 export interface ReviewHistoryItem {

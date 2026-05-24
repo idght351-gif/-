@@ -66,6 +66,7 @@ export default function App() {
           tone: params.tone,
           keywords: params.keywords,
           guidelines: params.guidelines,
+          personalExperience: params.personalExperience,
           images: screenshotDataUrls,
           visitImages: visitImages,
           guidelineImages: guidelineImages || [],

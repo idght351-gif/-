@@ -90,6 +90,7 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
   const [tone, setTone] = useState<ReviewTone>("friendly");
   const [guidelinesText, setGuidelinesText] = useState("");
   const [guidelinesFileName, setGuidelinesFileName] = useState("");
+  const [personalExperience, setPersonalExperience] = useState("");
   
   // Keyword tags list
   const [keywordInput, setKeywordInput] = useState("");
@@ -515,6 +516,7 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
       tone,
       keywords,
       guidelines: guidelinesText,
+      personalExperience,
     };
 
     const imgDataUrls = screenshots.map((s) => s.dataUrl);
@@ -1019,6 +1021,29 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
               ))}
             </div>
           )}
+        </div>
+
+        {/* Step 5: Personal Experience & Positives */}
+        <div className="space-y-3 pt-1 border-t border-brand-border animate-fade-in">
+          <div className="flex items-center gap-1.5">
+            <span className="px-2 py-0.5 text-[9px] bg-brand-blue text-white font-bold rounded-md font-mono">
+              05
+            </span>
+            <label className="text-xs font-bold tracking-wide text-neutral-800 uppercase block">
+              나만의 특별한 개인 체험 및 좋았던 점 (선택)
+            </label>
+          </div>
+          <p className="text-[10px] text-neutral-500 -mt-2 leading-relaxed">
+            방문하셨을 때 겪었던 서비스 에피소드, 맛의 상세한 묘사, 매장의 특별했던 친절함이나 인테리어 등 강조하고 싶으신 핵심 기억을 편하게 자유 형식으로 쭉 기입해 주세요. 생성되는 리뷰 본문에 자연스럽게 녹여 드립니다.
+          </p>
+          <textarea
+            placeholder="예: 사장님이 서비스로 주신 계란찜이 정말 폭신하고 맛있었어요! 고기가 엄청 두껍고 초벌되어서 나와 육즙이 가득했으며, 직원분들이 직접 구워주셔서 끝까지 편하게 식사할 수 있었던 부분이 최고였습니다."
+            value={personalExperience}
+            onChange={(e) => setPersonalExperience(e.target.value)}
+            disabled={isLoading}
+            rows={4}
+            className="w-full text-xs p-3 bg-neutral-50 border border-neutral-200 outline-none rounded-lg resize-none focus:border-brand-blue focus:bg-white focus:ring-1 focus:ring-brand-blue transition-all leading-relaxed"
+          />
         </div>
 
         {/* Big high contrast launch button */}
