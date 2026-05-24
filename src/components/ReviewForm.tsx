@@ -8,7 +8,6 @@
 import { useState, useRef, DragEvent, ChangeEvent } from "react";
 import { UploadedFile, ReviewTone, ReviewGenerationParams } from "../types";
 import { AnimatePresence, motion } from "motion/react";
-import { WritingTipsPanel } from "./WritingTipsPanel";
 
 /**
  * Utility to compress images client-side.
@@ -88,9 +87,12 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
   const [storeName, setStoreName] = useState("");
   const [storeCategory, setStoreCategory] = useState("");
   const [tone, setTone] = useState<ReviewTone>("friendly");
-  const [guidelinesText, setGuidelinesText] = useState("");
-  const [guidelinesFileName, setGuidelinesFileName] = useState("");
   const [personalExperience, setPersonalExperience] = useState("");
+  
+  // Image Compression & Resolution Custom Settings (Option 1)
+  const [maxImgDimension, setMaxImgDimension] = useState<number>(1400);
+  const [imgQuality, setImgQuality] = useState<number>(0.82);
+  const [showAdvancedImgSettings, setShowAdvancedImgSettings] = useState(false);
   
   // Custom requirements states
   const [targetLength, setTargetLength] = useState<number>(1300);
@@ -102,28 +104,21 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
   // Screenshots (2~3 files to learn best quality blog formats)
   const [screenshots, setScreenshots] = useState<UploadedFile[]>([]);
   
-  // Guideline uploads for step 3 (can accept screenshots/images as well as doc files)
-  const [guidelineImages, setGuidelineImages] = useState<UploadedFile[]>([]);
-  
   // New: Actual Visit Photos (ordered 1, 2, 3... to be placed sequentially inside the review)
   const [visitImages, setVisitImages] = useState<UploadedFile[]>([]);
 
   const imageInputRef = useRef<HTMLInputElement>(null);
   const visitImageInputRef = useRef<HTMLInputElement>(null);
-  const docInputRef = useRef<HTMLInputElement>(null);
 
   // Drag and drop states
   const [isDragOverImage, setIsDragOverImage] = useState(false);
   const [isDragOverVisit, setIsDragOverVisit] = useState(false);
-  const [isDragOverDoc, setIsDragOverDoc] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   
   // Touch drag states for mobile sorting
   const [touchDraggedIndex, setTouchDraggedIndex] = useState<number | null>(null);
   const touchTimeoutRef = useRef<any>(null);
   const touchStartPosRef = useRef<{ x: number; y: number } | null>(null);
-
-  const [isAnalyzingGuideline, setIsAnalyzingGuideline] = useState(false);
 
   // Handle reference uploads (style screenshots, PDFs, documents)
   const processImageFiles = (files: FileList) => {
@@ -144,7 +139,7 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
       .slice(0, remainingSlots);
 
     filesToProcess.forEach((file) => {
-      compressImageIfNeeded(file).then((dataUrl) => {
+      compressImageIfNeeded(file, maxImgDimension, imgQuality).then((dataUrl) => {
         if (dataUrl) {
           const newUploaded: UploadedFile = {
             id: crypto.randomUUID(),
@@ -164,7 +159,7 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
     const filesToProcess = Array.from(files).filter((file) => file.type.startsWith("image/"));
     
     const loadedFilesPromises = filesToProcess.map((file) => {
-      return compressImageIfNeeded(file).then((dataUrl) => ({
+      return compressImageIfNeeded(file, maxImgDimension, imgQuality).then((dataUrl) => ({
         id: crypto.randomUUID(),
         name: file.name,
         size: file.size,
@@ -215,10 +210,6 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
 
   const removeVisitImage = (id: string) => {
     setVisitImages((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  const removeGuidelineImage = (id: string) => {
-    setGuidelineImages((prev) => prev.filter((item) => item.id !== id));
   };
 
   // Reorder index mapping
@@ -365,8 +356,7 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
       name: s.name,
       dataUrl: s.dataUrl,
     }));
-    const guidelineImgDataUrls = guidelineImages.map((g) => g.dataUrl);
-    onGenerate(payload, imgDataUrls, visitImgList, guidelineImgDataUrls);
+    onGenerate(payload, imgDataUrls, visitImgList, []);
   };
 
   return (
@@ -678,6 +668,99 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
               </div>
             </div>
           )}
+        </div>
+
+        {/* Step 2.6: Image Quality & Resolution Optimization (Option 1) */}
+        <div className="space-y-3 pt-1 border-t border-brand-border">
+          <button
+            type="button"
+            onClick={() => setShowAdvancedImgSettings(!showAdvancedImgSettings)}
+            className="flex items-center justify-between w-full py-1.5 px-1 hover:text-brand-blue group transition-colors"
+          >
+            <div className="flex items-center gap-1.5">
+              <span className="px-1.5 py-0.5 text-[9px] bg-emerald-500 text-white font-bold rounded-md font-mono">
+                OPT
+              </span>
+              <span className="text-xs font-bold tracking-wide text-neutral-800 uppercase block">
+                📸 이미지 해상도 및 용량 최적화 (1안 적용됨)
+              </span>
+            </div>
+            <span className="text-[10px] text-neutral-400 group-hover:text-brand-blue font-bold">
+              {showAdvancedImgSettings ? "접기 ▲" : "재설정/상세보기 ▼"}
+            </span>
+          </button>
+
+          {/* Settings panel - collapses or expands */}
+          <div className={`overflow-hidden transition-all duration-300 ${showAdvancedImgSettings ? "max-h-[500px] opacity-100 mt-2" : "max-h-0 opacity-0 pointer-events-none"}`}>
+            <div className="bg-emerald-50/30 border border-emerald-100/70 p-4 rounded-xl space-y-4">
+              
+              {/* Select Resolution (max dimension) */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold text-neutral-700 block">
+                  1) 이미지 최대 해상도 제한 (가로/세로 최댓값)
+                </span>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[1200, 1400, 1600].map((dim) => (
+                    <button
+                      key={dim}
+                      type="button"
+                      onClick={() => setMaxImgDimension(dim)}
+                      className={`py-1.5 px-1 text-[10px] font-bold rounded-lg transition-all border ${
+                        maxImgDimension === dim
+                          ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
+                          : "bg-white hover:bg-neutral-100 text-neutral-600 border-neutral-200"
+                      }`}
+                    >
+                      {dim}px {dim === 1400 ? "(표준권장)" : ""}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[9.5px] text-neutral-500 leading-normal pl-0.5">
+                  네이버 모바일 뷰 최적 가독성(1400px) 및 제미나이 Vision 인쇄체 글자 식별에 특화된 표준 해상도입니다.
+                </p>
+              </div>
+
+              {/* Select Quality */}
+              <div className="space-y-1.5">
+                <span className="text-[11px] font-bold text-neutral-700 block">
+                  2) 압축 인코딩 화질 (JPEG 압축률)
+                </span>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {[{ val: 0.70, lbl: "경량화 (70%)" }, { val: 0.82, lbl: "표준 (82%)" }, { val: 0.92, lbl: "고화질 (92%)" }].map((q) => (
+                    <button
+                      key={q.val}
+                      type="button"
+                      onClick={() => setImgQuality(q.val)}
+                      className={`py-1.5 px-1 text-[10px] font-bold rounded-lg transition-all border ${
+                        imgQuality === q.val
+                          ? "bg-emerald-600 border-emerald-600 text-white shadow-sm"
+                          : "bg-white hover:bg-neutral-105 text-neutral-650 border-neutral-200"
+                      }`}
+                    >
+                      {q.lbl}
+                    </button>
+                  ))}
+                </div>
+                <p className="text-[9.5px] text-neutral-500 leading-normal pl-0.5">
+                  화질 저하 없이 원본 대비 용량을 최대 85% 절약하여 여러 장 업로드 시 전송 실패 현상을 영구 차단합니다.
+                </p>
+              </div>
+
+              {/* Educational info cards */}
+              <div className="bg-white border border-emerald-100 rounded-xl p-3 space-y-1.5 text-[9.5px] text-neutral-600 leading-relaxed font-sans">
+                <div className="flex items-center gap-1.5 font-bold text-emerald-700">
+                  <span>💡 1안 이미지 최적화 조건 알아보기</span>
+                </div>
+                <div>
+                  <span className="font-bold text-neutral-800">• 네이버 검색 노출 등급 (SEO):</span> 상위 노출되는 인플루언서 포스팅은 1200px ~ 1600px 가로폭 이미지를 가장 균형 있게 활용하며, 캡처본 속 글자 및 레이아웃을 네이버 AI 봇이 정밀 판독하기 매우 수월해집니다.
+                </div>
+                <div>
+                  <span className="font-bold text-neutral-800">• AI 스캔 극대화:</span> 업로드된 우수 포스팅의 줄글/서식/어조를 무손실 스캔하기 위해 너무 크거나 작은 이미지는 1400px로 오토 스케일링하여 지능형 엔진에 무해하게 공급합니다.
+                </div>
+              </div>
+
+            </div>
+          </div>
         </div>
 
         {/* Step 3: Custom Posting Requirements & Keyword Control */}

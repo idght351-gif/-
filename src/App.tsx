@@ -70,6 +70,9 @@ export default function App() {
           images: screenshotDataUrls,
           visitImages: visitImages,
           guidelineImages: guidelineImages || [],
+          targetLength: params.targetLength,
+          requiredKeywords: params.requiredKeywords,
+          optionalKeywords: params.optionalKeywords,
         }),
       });
 
