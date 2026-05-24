@@ -69,6 +69,9 @@ app.use(express.urlencoded({ limit: "30mb", extended: true }));
         images: rawImages,
         visitImages: rawVisitImages,
         guidelineImages: rawGuidelineImages,
+        targetLength = 1300,
+        requiredKeywords: rawReqKeywords,
+        optionalKeywords: rawOptKeywords,
       } = req.body;
 
       // Defensive checking for arrays
@@ -76,6 +79,8 @@ app.use(express.urlencoded({ limit: "30mb", extended: true }));
       const images = Array.isArray(rawImages) ? rawImages : [];
       const visitImages = Array.isArray(rawVisitImages) ? rawVisitImages : [];
       const guidelineImages = Array.isArray(rawGuidelineImages) ? rawGuidelineImages : [];
+      const requiredKeywords = Array.isArray(rawReqKeywords) ? rawReqKeywords : [];
+      const optionalKeywords = Array.isArray(rawOptKeywords) ? rawOptKeywords : [];
 
       let ai;
       try {
@@ -113,7 +118,7 @@ app.use(express.urlencoded({ limit: "30mb", extended: true }));
           };
         });
 
-      // Convert guideline images/PDFs/files to Gemini inline data
+      // Convert guideline images/PDFs/files to Gemini inline data (kept for backward fallback)
       const guidelineParts = guidelineImages
         .filter((imgStr: any) => typeof imgStr === "string" && imgStr)
         .map((imgStr: string) => {
@@ -127,8 +132,7 @@ app.use(express.urlencoded({ limit: "30mb", extended: true }));
         });
 
       // Assemble tone description
-      // Users requested to delete step 5 and use the default natural blog influencer tone referencing excellent reviews
-      const toneGuide = "인위적이지 않고 대단히 세련되면서도 친근한 네이버 인플루언서 톤앤매너. 함께 업로드된 [우수 리뷰 캡쳐 이미지 및 원고 파일/PDF]의 실제 문체, 단락 유입 방식, 구어체/해요체 어구 믹싱, 이모지 기법, 강조 패턴을 집중 스캔하여 100% 동일하게 사람 냄새 나는 리얼한 우수 포스팅 어투를 고도로 복사/재현해야 합니다.";
+      const toneGuide = "인위적이지 않고 대단히 세련되면서도 친근한 네이버 인플루언서 톤앤매너. 함께 업로드된 [우수 리뷰 캡쳐 이미지 및 원고 파일/PDF]가 있을 경우 실제 문체, 단락 유입 방식, 구어체/해요체 어구 믹싱, 이모지 기법, 강조 패턴을 집중 스캔하여 100% 동일하게 사람 냄새 나는 리얼한 우수 포스팅 어투를 고도로 복사/재현해야 합니다.";
 
       // Prepare descriptive listing of upload sequence to aid the instruction
       const visitMetaInfo = visitImages.map((img: any, idx: number) => {
@@ -139,28 +143,32 @@ app.use(express.urlencoded({ limit: "30mb", extended: true }));
 # Role: 네이버 블로그 상위 노출 및 마케팅 전문 카피라이터 (Blog Optimization Expert)
 
 # Purpose:
-사용자가 제공한 방문 정보 및 우수 리뷰 캡쳐본 이미지, 가이드라인 파일, 그리고 **[실제 방문 매장/음식 사진들]**을 고도로 다층 분석하여 네이버 검색 알고리즘(C-Rank, DIA+) 조건에 최적화된 고품질 블로그 원고를 생성합니다.
+사용자가 제공한 방문 정보 및 우수 리뷰 캡쳐본 이미지, 가이드라인 정보, 그리고 **[실제 방문 매장/음식 사진들]**을 고도로 다층 분석하여 네이버 검색 알고리즘(C-Rank, DIA+) 조건에 최적화된 고품질 블로그 원고를 생성합니다.
 
-# 대상 정보:
+# 대상 정보 & 작성 기준:
 1. 대상 가게/업체명: ${storeName || "미지정 (작성시 문맥에 맞게 보정)"}
 2. 카테고리/업종: ${storeCategory || "일반 업종"}
 3. 타겟 톤앤매너: ${toneGuide}
-4. 사용자 지정 키워드: ${keywords.length > 0 ? keywords.join(", ") : "지정 없음 (3번 가이드라인 텍스트 및 우수리뷰 이미지에서 자동 추출하여 학습 적용)"}
-5. 작성 가이드라인 (체험단 상위 누락 방지 조건):
-${guidelines || "특별한 가이드 기준 없음 (자연스러운 칭찬과 상세 정보 포함)"}
+4. 작성 권장 글자수: 반드시 **최소 공백 포함 ${targetLength}자 이상**으로 내용을 대단히 풍성하고 상세하게 전개해 전면 만족시킬 것! (상위 노출의 핵심 체류 기준)
+5. 필수 지정 키워드: [ ${requiredKeywords.length > 0 ? requiredKeywords.join(", ") : "지정 없음"} ]
+   - 지시: 필수 키워드는 제목에 반드시 자연스럽게 포함되고, 본문 속 내용 단락에 각각 **3회 이상 대단히 자연스럽고 조화롭게 반복 반영**되어야 합니다.
+6. 선택 지정 키워드: [ ${optionalKeywords.length > 0 ? optionalKeywords.join(", ") : "지정 없음"} ]
+   - 지시: 선택 키워드는 본문 전체의 흐름을 칭찬하거나 보충할 때 **스토리라인에 부합하게 1~2회씩 가볍고 알차게 믹싱**하십시오.
+7. 가이드라인 참고 백업:
+${guidelines || "특별한 백업 기준 없음"}
 
-6. 사용자가 등록한 실제 사진 업로드 순서 목록 (순서 100% 준수):
+8. 사용자가 등록한 실제 사진 업로드 순서 목록 (순서 100% 준수):
 ${visitMetaInfo || "등록된 본문 실물 사진 없음 (자연스러운 일러스트 가이드 적용)"}
 
-7. 사용자가 입력한 나만의 특별한 개인 체험 및 좋았던 점 (리뷰 본문에 최우선 반영할 내용):
+9. 사용자가 입력한 나만의 특별한 개인 체험 및 좋았던 점 (리뷰 본문에 최우선 반영할 내용):
 ${personalExperience || "작성된 개인 에피소드가 없습니다. 기본 가이드라인과 이미지 정보를 토대로 실감나게 채워 작성해 주세요."}
 
 # Core Vision & Text Keyword Learning Instruction:
-- **⭐ 핵심 지시 (개인적 실체 체험담 100% 자연스럽게 녹여내기):** 만약 사용자가 적어준 '나만의 특별한 개인 체험 및 좋았던 점'(7번 정보)이 기입되어 있다면, 이 내용(서비스 에피소드, 특정 메뉴의 맛 묘사, 직원분의 친절했던 사연, 좋았던 매장 특이점 등)을 본문의 시식평 단락 및 마무리에 절대 빼놓지 말고 물 흐르듯 아주 자연스러운 파워블로거 구어체로 풍성히 녹여 기재하세요! 두서없이 적었더라도 세련되게 다듬어 문맥의 감칠맛을 살리며, 독창적인 '내돈내산 혹은 리얼 직접체험기'의 생명력을 불어넣어야 합니다. 
-- **⭐ 핵심 지시 (가이드라인 글 및 이미지 내 키워드 오토 추출):** 3번에 업로드된 [리뷰작성 가이드라인 텍스트 파일], [가이드라인 캡처 이미지], [우수리뷰 파일/PDF/캡쳐 스크린샷 이미지] 속에 포함된 텍스트와 노출 권장 키워드(예: "OO맛집, OO추천, OO역맛집" 등 강조 문구 및 글귀)를 비전 및 다층분석 기술로 **전부 정밀 추출하여 스스로 학습**하세요. 학습된 핵심 키워드 리스트를 제목과 본문 요소곳곳에 **5~8회씩 완벽히 자연스럽게** 녹여내야 합니다.
-- 함께 송신된 **우수 리뷰 스크린샷 및 참고용 파일/PDF**들을 통해, 글 단락 나누기 호흡법, 유용한 강조 볼드 처리 기법을 분석 학습하여 이식하세요.
+- **⭐ 핵심 지시 (개인적 실체 체험담 100% 자연스럽게 녹여내기):** 만약 사용자가 적어준 '나만의 특별한 개인 체험 및 좋았던 점'(9번 정보)이 기입되어 있다면, 이 내용(서비스 에피소드, 특정 메뉴의 맛 묘사, 직원분의 친절했던 사연, 좋았던 매장 특이점 등)을 본문의 시식평 단락 및 마무리에 절대 빼놓지 말고 물 흐르듯 아주 자연스러운 파워블로거 구어체로 풍성히 녹여 기재하세요! 두서없이 적었더라도 세련되게 다듬어 문맥의 감칠맛을 살리며, 독창적인 '내돈내산 혹은 리얼 직접체험기'의 생명력을 불어넣어야 합니다. 
+- **⭐ 핵심 지시 (가이드 키워드의 자연스러운 안착):** 사용자가 지정한 '필수 키워드'와 '선택 키워드'가 어색하지 않게(예: 단순 나열이 아닌, "대표적인 홍대맛집으로 소문난 삼겹살 전문점답게" 처럼 문체 앞뒤 맥락이 한 몸처럼 달라붙도록) 한 번 더 공들여 본문을 빌딩하십시오.
+- 함께 송신된 **우수 리뷰 스크린샷 및 참고용 파일/PDF**가 있다면, 글 단락 나누기 호흡법, 유용한 강조 볼드 처리 기법을 분석 학습하여 이식하세요.
 - **실제 업로드된 실물 사진들(사진 순서 1, 2, 3...)**이 있을 경우, Gemini 비전 기술로 각 이미지의 디자인, 색상, 음식 비주얼, 내부 매장 상태 등을 현실성 있게 파악하여 본문에 극찬 스토리로 세부 묘사하세요. 
-- 예: "고기가 노릇하게 구워진 1번 사진을 보시면 대박이죠", "2번 사진처럼 매장 분위기가 아주 모던해서..." 등, 실제 사진 내용을 소름 돋게 설명에 녹여주어 단순 줄글이 아닌 '진짜 영수증 리뷰어' 같은 포스를 풍기게 하세요.
+  - 예: "고기가 노릇하게 구워진 1번 사진을 보시면 대박이죠", "2번 사진처럼 매장 분위기가 아주 모던해서..." 등, 실제 사진 내용을 설명에 녹여주어 단순 줄글이 아닌 '진짜 영수증 리뷰어' 같은 포스를 풍기게 하세요.
 
 # Core Writing Principles:
 1. **체류 시간 확보**: 독자의 체류 시간(2분 이상) 확보를 위해 가독성이 높고 꼼꼼한 정보 위주로 서술하세요.

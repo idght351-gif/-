@@ -92,9 +92,12 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
   const [guidelinesFileName, setGuidelinesFileName] = useState("");
   const [personalExperience, setPersonalExperience] = useState("");
   
-  // Keyword tags list
-  const [keywordInput, setKeywordInput] = useState("");
-  const [keywords, setKeywords] = useState<string[]>([]);
+  // Custom requirements states
+  const [targetLength, setTargetLength] = useState<number>(1300);
+  const [requiredKeywordInput, setRequiredKeywordInput] = useState("");
+  const [requiredKeywords, setRequiredKeywords] = useState<string[]>([]);
+  const [optionalKeywordInput, setOptionalKeywordInput] = useState("");
+  const [optionalKeywords, setOptionalKeywords] = useState<string[]>([]);
 
   // Screenshots (2~3 files to learn best quality blog formats)
   const [screenshots, setScreenshots] = useState<UploadedFile[]>([]);
@@ -331,172 +334,6 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
     touchStartPosRef.current = null;
   };
 
-  // Handle guidelines document/screenshot upload (supports txt, docx, pdf, png, jpg etc.)
-  const processDocFiles = async (files: FileList | File[]) => {
-    const filesArray = Array.from(files);
-    if (!filesArray.length) return;
-
-    // Append file names
-    setGuidelinesFileName((prev) => {
-      const names = filesArray.map(f => f.name);
-      return prev ? `${prev}, ${names.join(", ")}` : names.join(", ");
-    });
-
-    for (const file of filesArray) {
-      if (file.type === "text/plain" || file.name.endsWith(".txt")) {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-          if (e.target?.result && typeof e.target.result === "string") {
-            setGuidelinesText((prev) => {
-              const header = `■ [문서 가이드: ${file.name}]\n`;
-              return prev ? `${prev}\n\n${header}${e.target.result}` : `${header}${e.target.result}`;
-            });
-          }
-        };
-        reader.readAsText(file);
-      } else if (file.type.startsWith("image/") || file.type === "application/pdf" || file.name.endsWith(".pdf")) {
-        await new Promise<void>((resolve) => {
-          compressImageIfNeeded(file).then(async (fileDataUrl) => {
-            if (fileDataUrl) {
-              const newUploaded: UploadedFile = {
-                id: crypto.randomUUID(),
-                name: file.name,
-                size: file.size,
-                type: file.type || "application/pdf",
-                dataUrl: fileDataUrl,
-              };
-              setGuidelineImages((prev) => [...prev, newUploaded]);
-
-              // Start visual/text extraction analysis via Gemini API
-              setIsAnalyzingGuideline(true);
-              const loadingBanner = `[✨ AI 모델이 '${file.name}' 가이드라인을 스캔하여 글의 핵심 규칙 목록을 정밀 분석하는 중입니다...]`;
-              setGuidelinesText((prev) => {
-                return prev ? `${prev}\n\n${loadingBanner}` : loadingBanner;
-              });
-
-              try {
-                const response = await fetch("/api/analyze-guideline", {
-                  method: "POST",
-                  headers: {
-                    "Content-Type": "application/json",
-                  },
-                  body: JSON.stringify({
-                    fileDataUrl,
-                    fileName: file.name,
-                  }),
-                });
-
-                if (!response.ok) {
-                  const errorText = await response.text();
-                  let errMsg = `서버 오류 (Status: ${response.status})`;
-                  try {
-                    const parsed = JSON.parse(errorText);
-                    errMsg = parsed.message || parsed.error || errMsg;
-                  } catch (e) {
-                    if (errorText && errorText.length < 150) {
-                      errMsg = errorText;
-                    }
-                  }
-                  throw new Error(errMsg);
-                }
-
-                let data;
-                try {
-                  data = await response.json();
-                } catch (jsonErr) {
-                  throw new Error("서버 응답 형식이 올바르지 않습니다. (JSON 변환 실패)");
-                }
-
-                if (data.success && data.text) {
-                  setGuidelinesText((prev) => {
-                    const cleaned = prev.replace(loadingBanner, "").trim();
-                    const contentText = `■ 가이드 및 우수리뷰 [${file.name}] AI 정밀 추출 기준:\n${data.text}`;
-                    return cleaned ? `${cleaned}\n\n${contentText}` : contentText;
-                  });
-
-                  // Add keywords to step 4 keywords state list safely
-                  if (data.keywords && Array.isArray(data.keywords)) {
-                    const cleanedExtracted = data.keywords
-                      .map((k: string) => k.replace(/#/g, "").trim())
-                      .filter((k: string) => k.length > 0);
-
-                    if (cleanedExtracted.length > 0) {
-                      setKeywords((prev) => {
-                        const merged = [...prev];
-                        cleanedExtracted.forEach((k: string) => {
-                          if (!merged.includes(k)) {
-                            merged.push(k);
-                          }
-                        });
-                        return merged;
-                      });
-                    }
-                  }
-                } else {
-                  setGuidelinesText((prev) => {
-                    const cleaned = prev.replace(loadingBanner, "").trim();
-                    const errorBanner = `[⚠️ '${file.name}' 가이드 이미지 상세 분석 실패: ${data.message || "알 수 없는 오류"}]`;
-                    return cleaned ? `${cleaned}\n\n${errorBanner}` : errorBanner;
-                  });
-                }
-              } catch (err: any) {
-                setGuidelinesText((prev) => {
-                  const cleaned = prev.replace(loadingBanner, "").trim();
-                  const errorBanner = `[⚠️ '${file.name}' 분석 연동 실패: ${err.message || "연결이 마이크로하게 지연되었습니다"}]`;
-                  return cleaned ? `${cleaned}\n\n${errorBanner}` : errorBanner;
-                });
-              } finally {
-                setIsAnalyzingGuideline(false);
-                resolve();
-              }
-            } else {
-              resolve();
-            }
-          });
-        });
-      } else {
-        setGuidelinesText((prev) => {
-          const itemText = `[${file.name} 가이드라인 파일이 분석용으로 등록되었습니다.]\n본문에 들어갈 필수 문구, 금지어, 필수 첨부 키워드 등을 직접 추가로 편집해 주시면 리뷰 반영 완성도가 더욱 매끄러워집니다.`;
-          return prev ? `${prev}\n\n${itemText}` : itemText;
-        });
-      }
-    }
-  };
-
-  const handleDocChange = (e: ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files) {
-      processDocFiles(e.target.files);
-    }
-  };
-
-  const handleDocDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault();
-    setIsDragOverDoc(false);
-    if (e.dataTransfer.files) {
-      processDocFiles(e.dataTransfer.files);
-    }
-  };
-
-  // Handle Keyword tag creation
-  const handleAddKeyword = () => {
-    const trimmed = keywordInput.trim();
-    if (trimmed && !keywords.includes(trimmed)) {
-      setKeywords((prev) => [...prev, trimmed]);
-      setKeywordInput("");
-    }
-  };
-
-  const handleKeywordKeyPress = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      handleAddKeyword();
-    }
-  };
-
-  const removeKeyword = (kw: string) => {
-    setKeywords((prev) => prev.filter((item) => item !== kw));
-  };
-
   // Submit form
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -514,9 +351,12 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
       storeName,
       storeCategory,
       tone,
-      keywords,
-      guidelines: guidelinesText,
+      keywords: requiredKeywords, // legacy compatibility
+      guidelines: `[작성 가이드라인]\n- 최소 권장 글자수: ${targetLength}자 이상\n- 필수 키워드: ${requiredKeywords.join(", ")}\n- 선택 키워드: ${optionalKeywords.join(", ")}`,
       personalExperience,
+      targetLength,
+      requiredKeywords,
+      optionalKeywords,
     };
 
     const imgDataUrls = screenshots.map((s) => s.dataUrl);
@@ -840,194 +680,182 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
           )}
         </div>
 
-        {/* Step 3: Guidelines File upload */}
-        <div className="space-y-3 pt-1 border-t border-brand-border">
+        {/* Step 3: Custom Posting Requirements & Keyword Control */}
+        <div className="space-y-4 pt-1 border-t border-brand-border">
           <div className="flex items-center gap-1.5">
             <span className="px-2 py-0.5 text-[9px] bg-brand-blue text-white font-bold rounded-md font-mono">
               03
             </span>
             <label className="text-xs font-bold tracking-wide text-neutral-800 uppercase block">
-              리뷰작성기준 및 기법 가이드
+              리뷰 작성 기준 및 키워드 설정
             </label>
           </div>
 
-          <WritingTipsPanel onApplyPreset={(rules) => setGuidelinesText(rules)} />
+          {/* 1) Word Count Target */}
+          <div className="space-y-2">
+            <span className="text-[11px] font-bold text-neutral-700 block">
+              1) 글자수 선택
+            </span>
+            <div className="grid grid-cols-3 gap-1.5">
+              {[1300, 1500, 2000].map((length) => (
+                <button
+                  key={length}
+                  type="button"
+                  onClick={() => setTargetLength(length)}
+                  className={`py-2 px-1 text-xs font-bold rounded-lg transition-all border ${
+                    targetLength === length
+                      ? "bg-brand-blue border-brand-blue text-white shadow-[0_2px_8px_rgba(0,122,255,0.2)]"
+                      : "bg-neutral-50 hover:bg-neutral-100 text-neutral-600 border-neutral-200"
+                  }`}
+                >
+                  {length}자 이상
+                </button>
+              ))}
+            </div>
+          </div>
 
-          <div
-            onDragOver={(e) => {
-              e.preventDefault();
-              setIsDragOverDoc(true);
-            }}
-            onDragLeave={() => setIsDragOverDoc(false)}
-            onDrop={handleDocDrop}
-            onClick={() => docInputRef.current?.click()}
-            className={`border border-dashed rounded-xl p-3.5 text-center cursor-pointer transition-all duration-200 ${
-              isDragOverDoc
-                ? "border-brand-blue bg-blue-50/10"
-                : "border-neutral-200 hover:border-brand-blue bg-neutral-50"
-            }`}
-          >
-            <input
-              type="file"
-              ref={docInputRef}
-              onChange={handleDocChange}
-              accept=".txt,.doc,.docx,.pdf,.hwp,image/*"
-              className="hidden"
-              multiple
-              disabled={isLoading}
-            />
-            {guidelinesFileName ? (
-              <div className="text-xs font-bold text-brand-blue flex items-center justify-center gap-1.5">
-                <span className="truncate max-w-[240px] font-mono">📄 {guidelinesFileName}</span>
-                <span className="text-[9px] text-neutral-400 font-normal">(변경하려면 클릭)</span>
-              </div>
-            ) : (
-              <div>
-                <p className="text-xs font-bold text-neutral-800">
-                  리뷰 가이드라인 분석 파일 및 캡처 이미지 업로드
-                </p>
-                <p className="text-[10px] text-neutral-500 mt-1 leading-normal">
-                  체험단 필수 안내 사항문서 (.txt, .docx, .pdf) 또는 가이드 캡처 스크린샷 이미지
-                </p>
+          {/* 2) Required Keywords */}
+          <div className="space-y-2 pt-1">
+            <div className="flex justify-between items-baseline">
+              <span className="text-[11px] font-bold text-neutral-700 block">
+                2) 필수 키워드 (2~3개 권장)
+              </span>
+              <span className="text-[9px] text-brand-blue font-bold font-mono">
+                {requiredKeywords.length}개 추가됨
+              </span>
+            </div>
+            
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                placeholder="엔터 또는 추가 버튼으로 등록"
+                value={requiredKeywordInput}
+                onChange={(e) => setRequiredKeywordInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const trimmed = requiredKeywordInput.trim();
+                    if (trimmed && !requiredKeywords.includes(trimmed)) {
+                      setRequiredKeywords((prev) => [...prev, trimmed]);
+                      setRequiredKeywordInput("");
+                    }
+                  }
+                }}
+                disabled={isLoading}
+                className="flex-1 text-xs px-3 py-2 bg-neutral-50 border border-neutral-200 focus:border-brand-blue focus:bg-white outline-none rounded-lg transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const trimmed = requiredKeywordInput.trim();
+                  if (trimmed && !requiredKeywords.includes(trimmed)) {
+                    setRequiredKeywords((prev) => [...prev, trimmed]);
+                    setRequiredKeywordInput("");
+                  }
+                }}
+                disabled={isLoading}
+                className="px-3 bg-brand-blue text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
+              >
+                추가
+              </button>
+            </div>
+
+            {/* Required Keywords Tags Render */}
+            {requiredKeywords.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {requiredKeywords.map((kw) => (
+                  <span
+                    key={kw}
+                    className="inline-flex items-center text-[10px] bg-red-50 border border-red-200 text-red-600 pl-2.5 pr-1.5 py-0.5 rounded-full font-bold"
+                  >
+                    #{kw} (필수)
+                    <button
+                      type="button"
+                      onClick={() => setRequiredKeywords((prev) => prev.filter((item) => item !== kw))}
+                      className="ml-1 text-red-400 hover:text-red-700 text-[11px] font-extrabold"
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
               </div>
             )}
           </div>
 
-          {/* Guideline Screenshots / PDF Previews */}
-          {guidelineImages.length > 0 && (
-            <div className="grid grid-cols-4 gap-2 mt-2">
-              <AnimatePresence>
-                {guidelineImages.map((file) => (
-                  <motion.div
-                    key={file.id}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    exit={{ opacity: 0, scale: 0.9 }}
-                    className="relative aspect-square border border-brand-border rounded-lg bg-neutral-50 overflow-hidden shadow-sm group"
+          {/* 3) Optional Keywords */}
+          <div className="space-y-2 pt-1">
+            <div className="flex justify-between items-baseline">
+              <span className="text-[11px] font-bold text-neutral-700 block">
+                3) 선택 키워드
+              </span>
+              <span className="text-[9px] text-neutral-500 font-bold font-mono">
+                {optionalKeywords.length}개 추가됨
+              </span>
+            </div>
+            
+            <div className="flex gap-1.5">
+              <input
+                type="text"
+                placeholder="엔터 또는 추가 버튼으로 등록"
+                value={optionalKeywordInput}
+                onChange={(e) => setOptionalKeywordInput(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    const trimmed = optionalKeywordInput.trim();
+                    if (trimmed && !optionalKeywords.includes(trimmed)) {
+                      setOptionalKeywords((prev) => [...prev, trimmed]);
+                      setOptionalKeywordInput("");
+                    }
+                  }
+                }}
+                disabled={isLoading}
+                className="flex-1 text-xs px-3 py-2 bg-neutral-50 border border-neutral-200 focus:border-brand-blue focus:bg-white outline-none rounded-lg transition-all"
+              />
+              <button
+                type="button"
+                onClick={() => {
+                  const trimmed = optionalKeywordInput.trim();
+                  if (trimmed && !optionalKeywords.includes(trimmed)) {
+                    setOptionalKeywords((prev) => [...prev, trimmed]);
+                    setOptionalKeywordInput("");
+                  }
+                }}
+                disabled={isLoading}
+                className="px-3 bg-neutral-50 border border-neutral-200 text-neutral-700 text-xs font-bold rounded-lg hover:bg-neutral-100 transition-colors shadow-sm"
+              >
+                추가
+              </button>
+            </div>
+
+            {/* Optional Keywords Tags Render */}
+            {optionalKeywords.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 pt-1">
+                {optionalKeywords.map((kw) => (
+                  <span
+                    key={kw}
+                    className="inline-flex items-center text-[10px] bg-neutral-100 border border-neutral-300 text-neutral-700 pl-2.5 pr-1.5 py-0.5 rounded-full font-bold"
                   >
-                    {file.type.startsWith("image/") ? (
-                      <img
-                        src={file.dataUrl}
-                        alt="Uploaded Guideline"
-                        className="w-full h-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-full h-full flex flex-col items-center justify-center p-1.5 bg-blue-50/10 text-center">
-                        <span className="text-lg">📄</span>
-                        <span className="text-[8px] font-bold text-neutral-700 max-w-full truncate px-0.5" title={file.name}>
-                          {file.name}
-                        </span>
-                        <span className="text-[7.5px] text-brand-blue font-bold uppercase mt-0.5 font-mono">
-                          {file.name.split('.').pop() || "FILE"}
-                        </span>
-                      </div>
-                    )}
+                    #{kw}
                     <button
                       type="button"
-                      onClick={() => removeGuidelineImage(file.id)}
-                      className="absolute top-1 right-1 bg-neutral-900/80 hover:bg-neutral-900 text-white text-[9px] rounded-full w-4 h-4 flex items-center justify-center transition-colors font-bold shadow-sm z-10"
+                      onClick={() => setOptionalKeywords((prev) => prev.filter((item) => item !== kw))}
+                      className="ml-1 text-neutral-400 hover:text-neutral-600 text-[11px] font-extrabold"
                     >
                       ×
                     </button>
-                  </motion.div>
+                  </span>
                 ))}
-              </AnimatePresence>
-            </div>
-          )}
-
-          {/* Guidelines Text Editor Pre-populate / Edit Area */}
-          <div className="space-y-1">
-            <div className="flex justify-between items-center text-[10px]">
-              <span className="font-bold text-neutral-500">
-                가이드라인 원고 반영 텍스트 편집
-              </span>
-              {isAnalyzingGuideline && (
-                <span className="flex items-center gap-1 text-brand-orange font-bold animate-pulse">
-                  <span className="w-1.5 h-1.5 bg-brand-orange rounded-full animate-ping" />
-                  AI 이미지 텍스트 추출 분석 중...
-                </span>
-              )}
-            </div>
-            <textarea
-              placeholder="파일 내용이나 작성 팁이 이곳에 자동 입력되며, 수동 보정도 가능합니다."
-              value={guidelinesText}
-              onChange={(e) => setGuidelinesText(e.target.value)}
-              disabled={isLoading || isAnalyzingGuideline}
-              rows={6}
-              className={`w-full text-xs p-3 bg-neutral-50 border outline-none rounded-lg resize-none font-mono transition-all focus:ring-1 ${
-                isAnalyzingGuideline 
-                  ? "border-brand-orange ring-1 ring-brand-orange bg-amber-50/5 text-neutral-500" 
-                  : "border-neutral-200 focus:border-brand-blue focus:bg-white focus:ring-brand-blue"
-              }`}
-            />
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Step 4: SEO Key phrases / Keywords to target */}
-        <div className="space-y-3 pt-1 border-t border-brand-border">
-          <div className="flex justify-between items-baseline">
-            <div className="flex items-center gap-1.5">
-              <span className="px-2 py-0.5 text-[9px] bg-brand-blue text-white font-bold rounded-md font-mono">
-                04
-              </span>
-              <label className="text-xs font-bold tracking-wide text-neutral-800 uppercase block">
-                네이버 SEO 검색 키워드
-              </label>
-            </div>
-            <span className="text-[10px] text-brand-orange font-bold">
-              ★3번 가이드에 있으면 자동분석
-            </span>
-          </div>
-          <p className="text-[10px] text-neutral-500 -mt-2 leading-relaxed">
-            비전 AI 모델이 가이드 파일 및 참고 리뷰 이미지 속의 키워드를 자동으로 학습하여 강조 삽입합니다. 추가 희망 시 아래에 지정해 주십시오.
-          </p>
-          <div className="flex gap-1.5">
-            <input
-              type="text"
-              placeholder="예: 홍대맛집, 삼겹살맛집 (엔터로 추가)"
-              value={keywordInput}
-              onChange={(e) => setKeywordInput(e.target.value)}
-              onKeyDown={handleKeywordKeyPress}
-              disabled={isLoading}
-              className="flex-1 text-xs px-3 py-2.5 bg-neutral-50 border border-neutral-200 focus:border-brand-blue focus:bg-white outline-none rounded-lg transition-all focus:ring-1 focus:ring-brand-blue"
-            />
-            <button
-              type="button"
-              onClick={handleAddKeyword}
-              disabled={isLoading}
-              className="px-4 bg-brand-blue text-white text-xs font-bold rounded-lg hover:bg-blue-700 transition-colors shadow-sm"
-            >
-              추가
-            </button>
-          </div>
-
-          {/* Keyword tags render */}
-          {keywords.length > 0 && (
-            <div className="flex flex-wrap gap-1.5 pt-1">
-              {keywords.map((kw) => (
-                <span
-                  key={kw}
-                  className="inline-flex items-center text-[10px] bg-blue-50/50 border border-blue-100 text-brand-blue pl-2.5 pr-2 py-0.5 rounded-full font-bold"
-                >
-                  #{kw}
-                  <button
-                    type="button"
-                    onClick={() => removeKeyword(kw)}
-                    className="ml-1.5 text-neutral-400 hover:text-neutral-700 text-[11px] font-extrabold"
-                  >
-                    ×
-                  </button>
-                </span>
-              ))}
-            </div>
-          )}
-        </div>
-
-        {/* Step 5: Personal Experience & Positives */}
+        {/* Step 4: Personal Experience & Positives */}
         <div className="space-y-3 pt-1 border-t border-brand-border animate-fade-in">
           <div className="flex items-center gap-1.5">
             <span className="px-2 py-0.5 text-[9px] bg-brand-blue text-white font-bold rounded-md font-mono">
-              05
+              04
             </span>
             <label className="text-xs font-bold tracking-wide text-neutral-800 uppercase block">
               나만의 특별한 개인 체험 및 좋았던 점 (선택)

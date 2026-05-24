@@ -22,6 +22,9 @@ export interface ReviewGenerationParams {
   keywords: string[];
   guidelines: string; // The guidelines text loaded from the uploaded file or manually written
   personalExperience?: string; // Personal experience, anecdotes, or general opinions to incorporate into the final post
+  targetLength?: number; // 1300, 1500, 2000
+  requiredKeywords?: string[];
+  optionalKeywords?: string[];
 }
 
 export interface ReviewHistoryItem {
