@@ -10,6 +10,68 @@ import { UploadedFile, ReviewTone, ReviewGenerationParams } from "../types";
 import { AnimatePresence, motion } from "motion/react";
 import { WritingTipsPanel } from "./WritingTipsPanel";
 
+/**
+ * Utility to compress images client-side.
+ * It resizes large images so that they stay well below Vercel's 4.5MB request payload limit.
+ * Resizing is perfectly fine since Gemini Vision models easily read guidelines and text at 1200px or 1400px resolution.
+ */
+const compressImageIfNeeded = (file: File, maxDimension: number = 1400, quality: number = 0.82): Promise<string> => {
+  return new Promise((resolve) => {
+    if (!file.type.startsWith("image/")) {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve((reader.result as string) || "");
+      reader.readAsDataURL(file);
+      return;
+    }
+
+    const img = new Image();
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      img.src = reader.result as string;
+    };
+    
+    img.onload = () => {
+      let width = img.width;
+      let height = img.height;
+      
+      // Calculate new dimensions to fit maxDimension
+      if (width > maxDimension || height > maxDimension) {
+        if (width > height) {
+          height = Math.round((height * maxDimension) / width);
+          width = maxDimension;
+        } else {
+          width = Math.round((width * maxDimension) / height);
+          height = maxDimension;
+        }
+      }
+      
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        // Compress as image/jpeg to drastically reduce size while preserving contrast and text legibility
+        const compressedBase64 = canvas.toDataURL("image/jpeg", quality);
+        resolve(compressedBase64);
+      } else {
+        // Fallback to original reader result
+        resolve((reader.result as string) || "");
+      }
+    };
+    
+    img.onerror = () => {
+      // Fallback in case of image loading failure
+      const fallbackReader = new FileReader();
+      fallbackReader.onloadend = () => resolve((fallbackReader.result as string) || "");
+      fallbackReader.readAsDataURL(file);
+    };
+
+    reader.readAsDataURL(file);
+  });
+};
+
 interface ReviewFormProps {
   onGenerate: (
     params: ReviewGenerationParams,
@@ -78,20 +140,18 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
       .slice(0, remainingSlots);
 
     filesToProcess.forEach((file) => {
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        if (typeof reader.result === "string") {
+      compressImageIfNeeded(file).then((dataUrl) => {
+        if (dataUrl) {
           const newUploaded: UploadedFile = {
             id: crypto.randomUUID(),
             name: file.name,
             size: file.size,
             type: file.type || (file.name.endsWith(".pdf") ? "application/pdf" : "text/plain"),
-            dataUrl: reader.result,
+            dataUrl: dataUrl,
           };
           setScreenshots((prev) => [...prev, newUploaded].slice(0, 3));
         }
-      };
-      reader.readAsDataURL(file);
+      });
     });
   };
 
@@ -100,24 +160,13 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
     const filesToProcess = Array.from(files).filter((file) => file.type.startsWith("image/"));
     
     const loadedFilesPromises = filesToProcess.map((file) => {
-      return new Promise<UploadedFile>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          if (typeof reader.result === "string") {
-            resolve({
-              id: crypto.randomUUID(),
-              name: file.name,
-              size: file.size,
-              type: file.type,
-              dataUrl: reader.result,
-            });
-          } else {
-            reject(new Error("Failed to read file"));
-          }
-        };
-        reader.onerror = () => reject(reader.error);
-        reader.readAsDataURL(file);
-      });
+      return compressImageIfNeeded(file).then((dataUrl) => ({
+        id: crypto.randomUUID(),
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        dataUrl: dataUrl,
+      }));
     });
 
     try {
@@ -306,10 +355,8 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
         reader.readAsText(file);
       } else if (file.type.startsWith("image/") || file.type === "application/pdf" || file.name.endsWith(".pdf")) {
         await new Promise<void>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = async () => {
-            if (typeof reader.result === "string") {
-              const fileDataUrl = reader.result;
+          compressImageIfNeeded(file).then(async (fileDataUrl) => {
+            if (fileDataUrl) {
               const newUploaded: UploadedFile = {
                 id: crypto.randomUUID(),
                 name: file.name,
@@ -404,8 +451,7 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
             } else {
               resolve();
             }
-          };
-          reader.readAsDataURL(file);
+          });
         });
       } else {
         setGuidelinesText((prev) => {
@@ -454,7 +500,12 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!storeName) {
-      alert("가게/업체명을 입력해 주세요.");
+      alert("01단계 '가게 기본 정보'의 가게명을 입력해 주세요! 가게명이 기입되어야 고성능 블로그 본문 생성이 시작됩니다.");
+      const inputEl = document.getElementById("store-name-input");
+      if (inputEl) {
+        inputEl.scrollIntoView({ behavior: "smooth", block: "center" });
+        inputEl.focus();
+      }
       return;
     }
 
@@ -531,6 +582,7 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
           <div className="grid grid-cols-2 gap-2">
             <div>
               <input
+                id="store-name-input"
                 type="text"
                 placeholder="가게명 (예: 맛찬들 홍대)"
                 value={storeName}
@@ -969,13 +1021,11 @@ export function ReviewForm({ onGenerate, isLoading, onLoadDemo }: ReviewFormProp
           )}
         </div>
 
-
-
         {/* Big high contrast launch button */}
         <div className="pt-4">
           <button
             type="submit"
-            disabled={isLoading || !storeName}
+            disabled={isLoading}
             className="w-full relative py-4 bg-brand-blue text-white font-bold rounded-xl hover:bg-blue-700 disabled:bg-neutral-200 disabled:text-neutral-400 transition-all font-mono tracking-wider flex items-center justify-center overflow-hidden shadow-[0_8px_20px_rgba(0,82,255,0.15)] hover:shadow-[0_8px_24px_rgba(0,82,255,0.25)]"
           >
             {isLoading ? (
